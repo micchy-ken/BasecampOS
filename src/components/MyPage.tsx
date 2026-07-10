@@ -74,12 +74,39 @@ export default function MyPage({
   const [geminiApiKey, setGeminiApiKey] = useState(() => {
     return localStorage.getItem('basecamp_os_gemini_api_key') || '';
   });
-  const [apiSaveMsg, setApiSaveMsg] = useState<string | null>(null);
+  const [apiSaveMsg, setApiSaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isValidatingApi, setIsValidatingApi] = useState(false);
 
-  const handleSaveApiKey = () => {
-    localStorage.setItem('basecamp_os_gemini_api_key', geminiApiKey);
-    setApiSaveMsg('Gemini APIキーを保存しました！AI機能が使用可能です。');
-    setTimeout(() => setApiSaveMsg(null), 4000);
+  const handleSaveApiKey = async () => {
+    const trimmedKey = geminiApiKey.trim();
+    if (!trimmedKey) {
+      localStorage.removeItem('basecamp_os_gemini_api_key');
+      setApiSaveMsg({ type: 'success', text: 'APIキーを消去しました。' });
+      setTimeout(() => setApiSaveMsg(null), 4000);
+      return;
+    }
+
+    // 改行、スペース、タブなどのすべての空白文字を削除
+    const cleanKey = trimmedKey.replace(/[\s\r\n]+/g, '');
+
+    setIsValidatingApi(true);
+    setApiSaveMsg(null);
+    try {
+      const { validateApiKeyAI } = await import('../lib/ai');
+      await validateApiKeyAI(cleanKey);
+      
+      // Verification succeeded, save the cleaned key to localStorage and local state
+      localStorage.setItem('basecamp_os_gemini_api_key', cleanKey);
+      setGeminiApiKey(cleanKey);
+      setApiSaveMsg({ type: 'success', text: 'Gemini APIキーの疎通確認に成功しました！APIキーを保存しました。AI自動寸法補完などの機能がご利用いただけます。' });
+    } catch (err: any) {
+      setApiSaveMsg({ 
+        type: 'error', 
+        text: `APIキーの検証に失敗しました。キーが間違っているか、Google AI Studioの利用可能枠を超えている可能性があります。エラー詳細: ${err.message || err}` 
+      });
+    } finally {
+      setIsValidatingApi(false);
+    }
   };
 
   // Firebase configuration handled via FirebaseSync component
@@ -165,8 +192,13 @@ export default function MyPage({
         </p>
 
         {apiSaveMsg && (
-          <div className="mb-4 bg-emerald-50 border-2 border-emerald-300 text-emerald-800 px-3 py-2.5 text-xs font-bold leading-relaxed rounded-md animate-fade-in">
-            👍 {apiSaveMsg}
+          <div className={`mb-4 border-2 px-3 py-2.5 text-xs font-bold leading-relaxed rounded-md animate-fade-in ${
+            apiSaveMsg.type === 'success' 
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-800' 
+              : 'bg-rose-50 border-rose-300 text-rose-800'
+          }`}>
+            {apiSaveMsg.type === 'success' ? '👍 ' : '⚠️ '}
+            {apiSaveMsg.text}
           </div>
         )}
 
@@ -177,13 +209,19 @@ export default function MyPage({
             className="flex-1 bg-slate-50 border border-slate-400 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-600"
             value={geminiApiKey}
             onChange={(e) => setGeminiApiKey(e.target.value)}
+            disabled={isValidatingApi}
           />
           <button 
             type="button" 
             onClick={handleSaveApiKey}
-            className="bg-black hover:bg-indigo-600 text-white font-extrabold px-6 py-2 rounded shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-colors cursor-pointer text-sm"
+            disabled={isValidatingApi}
+            className={`font-extrabold px-6 py-2 rounded shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-colors cursor-pointer text-sm flex items-center justify-center gap-2 ${
+              isValidatingApi 
+                ? 'bg-slate-400 text-white cursor-not-allowed shadow-none' 
+                : 'bg-black hover:bg-indigo-600 text-white'
+            }`}
           >
-            保存
+            {isValidatingApi ? '接続テスト中...' : '検証して保存'}
           </button>
         </div>
       </div>

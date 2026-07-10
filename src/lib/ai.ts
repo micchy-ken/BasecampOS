@@ -172,3 +172,27 @@ export async function analyzeImageAI(imageBase64: string, mimeType: string) {
 
   return JSON.parse(text);
 }
+
+export async function validateApiKeyAI(apiKey: string) {
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error('APIキーが入力されていません。');
+  }
+
+  // APIキーから改行やスペースを完全に除去
+  const cleanKey = apiKey.trim().replace(/[\s\r\n]+/g, '');
+
+  const ai = new GoogleGenAI({ apiKey: cleanKey });
+  
+  // 軽量高速で確実に利用可能な gemini-3.5-flash を使用して疎通テスト
+  const response = await ai.models.generateContent({
+    model: "gemini-3.5-flash",
+    contents: "APIキーテスト。疎通確認が成功した場合は「OK」とのみ返答してください。",
+  });
+
+  const text = response.text;
+  if (!text) {
+    throw new Error('AIから空の応答が返されました。APIキーが無効、または利用枠制限に達している可能性があります。');
+  }
+
+  return true;
+}
