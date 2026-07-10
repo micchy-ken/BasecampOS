@@ -1,0 +1,6 @@
+{
+  "name": "Camp Packing & Layout Simulator",
+  "description": "手持ちのキャンプギア情報と、車両・バゲージ・収納袋の入れ子構造パッキング判定、そしてテント設営のレイアウトシミュレーターを融合したキャンプ準備支援ツールです。Geminiによるギアのサイズ・重量予測検索もサポートします。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
