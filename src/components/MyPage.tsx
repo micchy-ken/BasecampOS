@@ -70,6 +70,18 @@ export default function MyPage({
   const [newVehName, setNewVehName] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
 
+  // API Key settings
+  const [geminiApiKey, setGeminiApiKey] = useState(() => {
+    return localStorage.getItem('basecamp_os_gemini_api_key') || '';
+  });
+  const [apiSaveMsg, setApiSaveMsg] = useState<string | null>(null);
+
+  const handleSaveApiKey = () => {
+    localStorage.setItem('basecamp_os_gemini_api_key', geminiApiKey);
+    setApiSaveMsg('Gemini APIキーを保存しました！AI機能が使用可能です。');
+    setTimeout(() => setApiSaveMsg(null), 4000);
+  };
+
   // Firebase configuration handled via FirebaseSync component
 
   // Sync state values on vehicle change
@@ -141,6 +153,41 @@ export default function MyPage({
   return (
     <div className="max-w-4xl mx-auto w-full flex flex-col gap-6" id="mypage-dashboard">
       
+      {/* AI API KEY CONFIGURATOR */}
+      <div className="bg-white border-2 border-black p-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+        <h3 className="text-lg font-black uppercase tracking-tight flex items-center gap-2 mb-2">
+          <Settings className="w-5 h-5 text-indigo-600" />
+          AI 設定 (Gemini API Key)
+        </h3>
+        <p className="text-xs text-slate-600 mb-4 font-bold leading-relaxed">
+          手持ちギアの「AI自動スペック取得機能」を使用するために、ご自身のGemini APIキーを入力してください。<br/>
+          ※キーはお使いのブラウザ内（ローカルストレージ）にのみ保存され、外部サーバーには一切送信されません。
+        </p>
+
+        {apiSaveMsg && (
+          <div className="mb-4 bg-emerald-50 border-2 border-emerald-300 text-emerald-800 px-3 py-2.5 text-xs font-bold leading-relaxed rounded-md animate-fade-in">
+            👍 {apiSaveMsg}
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <input 
+            type="password"
+            placeholder="AIzaSy... (Gemini API Key)"
+            className="flex-1 bg-slate-50 border border-slate-400 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-600"
+            value={geminiApiKey}
+            onChange={(e) => setGeminiApiKey(e.target.value)}
+          />
+          <button 
+            type="button" 
+            onClick={handleSaveApiKey}
+            className="bg-black hover:bg-indigo-600 text-white font-extrabold px-6 py-2 rounded shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-colors cursor-pointer text-sm"
+          >
+            保存
+          </button>
+        </div>
+      </div>
+
       {/* VEHICLE PROFILE CONFIGURATOR */}
       <div className="w-full flex flex-col gap-6">
         

@@ -164,19 +164,8 @@ export default function GearForm({ onAddGear, onAddMultipleGears, onSyncGears, o
     setSubmitSuccess(false);
 
     try {
-      const response = await fetch('/api/gear-lookup', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name: lookupQuery }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Connection failed or rate limit exceeded');
-      }
-
-      const data = await response.json();
+      const { lookupGearAI } = await import('../lib/ai');
+      const data = await lookupGearAI(lookupQuery);
       
       setName(data.name || lookupQuery);
       setBrand(data.brand || '');
@@ -197,9 +186,13 @@ export default function GearForm({ onAddGear, onAddMultipleGears, onSyncGears, o
       if (data.isHeuristic) {
         setFallbackActive(true);
       }
-
     } catch (err: any) {
       console.warn("API lookup failed. Triggering offline automatic heuristic estimation.", err);
+      if (err.message.includes('APIキー')) {
+        setSearchError(err.message);
+      } else {
+        setSearchError('情報の取得に失敗しました。一時的な仮サイズを割り当てます。');
+      }
       applyLocalHeuristicFallback(lookupQuery);
     } finally {
       setIsSearching(false);
@@ -214,17 +207,8 @@ export default function GearForm({ onAddGear, onAddMultipleGears, onSyncGears, o
     setIsFetchingWebShape(true);
     setWebShapeError(null);
     try {
-      const response = await fetch('/api/fetch-web-shape', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name, category }),
-      });
-      if (!response.ok) {
-        throw new Error('WEBからのベクター形状の取得に失敗しました。');
-      }
-      const data = await response.json();
+      const { fetchWebShapeAI } = await import('../lib/ai');
+      const data = await fetchWebShapeAI(name, category);
       if (data.polygon) {
         setCustomPolygon(data.polygon);
         setShape('custom');
@@ -264,20 +248,8 @@ export default function GearForm({ onAddGear, onAddMultipleGears, onSyncGears, o
         const imageBase64 = dataUrl.substring(commaIdx + 1);
         const mimeType = file.type || "image/png";
 
-        const response = await fetch('/api/gear-image-lookup', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ imageBase64, mimeType }),
-        });
-
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || 'Gemini Visionによる画像解析に失敗しました。');
-        }
-
-        const data = await response.json();
+        const { analyzeImageAI } = await import('../lib/ai');
+        const data = await analyzeImageAI(imageBase64, mimeType);
 
         setName(data.name || '画像から読み込んだギア');
         setBrand(data.brand || 'General');

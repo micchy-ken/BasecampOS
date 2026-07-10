@@ -114,19 +114,8 @@ export default function GearEditModal({
 
     try {
       const queryName = brand ? `${brand} ${name}` : name;
-      const response = await fetch('/api/gear-lookup', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name: queryName }),
-      });
-
-      if (!response.ok) {
-        throw new Error('自動スペック検索に失敗しました。');
-      }
-
-      const data = await response.json();
+      const { lookupGearAI } = await import('../lib/ai');
+      const data = await lookupGearAI(queryName);
       
       setName(data.name || name);
       setBrand(data.brand || brand);
@@ -139,9 +128,10 @@ export default function GearEditModal({
       setExpandedHeight(data.expandedHeight || 100);
       setWeight(data.weight || 2.0);
       setDescription(data.description || '');
+
       setEditorMsg({ type: 'success', text: 'AIによるスペックの自動補完に成功しました！' });
     } catch (err: any) {
-      setEditorMsg({ type: 'error', text: '自動取得に失敗しました。オフライン制限中、または型番が見つかりません。' });
+      setEditorMsg({ type: 'error', text: err.message || '自動取得に失敗しました。オフライン制限中、または型番が見つかりません。' });
     } finally {
       setIsAILookingUp(false);
     }
@@ -156,17 +146,8 @@ export default function GearEditModal({
     setIsFetchingWebShape(true);
     setWebShapeError(null);
     try {
-      const response = await fetch('/api/fetch-web-shape', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name: name, category: category }),
-      });
-      if (!response.ok) {
-        throw new Error('WEBからのベクター形状取得に失敗しました。');
-      }
-      const data = await response.json();
+      const { fetchWebShapeAI } = await import('../lib/ai');
+      const data = await fetchWebShapeAI(name, category);
       if (data.polygon) {
         setCustomPolygon(data.polygon);
         setShape('custom');
