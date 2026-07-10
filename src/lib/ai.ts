@@ -4,11 +4,13 @@ import { GoogleGenAI, Type } from "@google/genai";
 async function generateWithFallbackAndRetry(
   ai: any,
   requestParams: { contents: any; config?: any },
-  preferredModel: string = "gemini-3.5-flash"
+  preferredModel: string = "gemini-3.1-flash-lite"
 ) {
-  // 安定性が高く高速な 3.5-flash を最優先し、次に 2.5-flash, 1.5-flash へ順次フォールバック
-  const models = [preferredModel, "gemini-3.5-flash", "gemini-2.5-flash", "gemini-1.5-flash"];
-  const uniqueModels = Array.from(new Set(models));
+  // 安定したリリース版の `gemini-flash-latest` と軽量爆速の `gemini-3.1-flash-lite` を最優先。
+  // 実験的な `gemini-3.5-flash` は混雑時に503 UNAVAILABLEを返すため最後に配置。
+  // 廃止された非推奨モデル (1.5, 2.5 など) はパラメータエラーを引き起こすため完全に排除。
+  const models = [preferredModel, "gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-3.5-flash"];
+  const uniqueModels = Array.from(new Set(models)).filter(Boolean);
 
   let lastError: any = null;
 
@@ -32,8 +34,8 @@ async function generateWithFallbackAndRetry(
       const errMsg = err.message || String(err);
       console.warn(`Model ${model} failed:`, errMsg);
 
-      // Searchツールやレスポンススキーマに関わるエラー、またはツール自体が存在するなら、
-      // ツールやスキーマをその場で即座に剥がして、同モデルで1回だけ即時再試行
+      // Searchツールやレスポンススキーマ、または無効なパラメータ(400)などの引数エラーが発生した場合
+      // その場でツールやスキーマを剥がし、同じモデルで1度だけ即座にリトライを試みる
       const isToolOrSchemaError = 
         errMsg.includes("tool") || 
         errMsg.includes("search") || 
@@ -41,36 +43,42 @@ async function generateWithFallbackAndRetry(
         errMsg.includes("INVALID_ARGUMENT") ||
         errMsg.includes("400") ||
         errMsg.includes("not supported") ||
-        (currentConfig && currentConfig.tools);
+        (currentConfig && (currentConfig.tools || currentConfig.responseSchema));
 
       if (isToolOrSchemaError && currentConfig && (currentConfig.tools || currentConfig.responseSchema)) {
         console.warn(`Attempting immediate fallback for ${model} by stripping tools or responseSchema...`);
+        let modified = false;
         if (currentConfig.tools) {
           delete currentConfig.tools;
-        } else if (currentConfig.responseSchema) {
+          modified = true;
+        }
+        if (currentConfig.responseSchema) {
           delete currentConfig.responseSchema;
           if (currentConfig.responseMimeType === "application/json") {
             delete currentConfig.responseMimeType;
           }
+          modified = true;
         }
         
-        try {
-          const retryResponse = await ai.models.generateContent({
-            model: model,
-            contents: requestParams.contents,
-            config: currentConfig,
-          });
-          if (retryResponse && retryResponse.text) {
-            return retryResponse;
+        if (modified) {
+          try {
+            const retryResponse = await ai.models.generateContent({
+              model: model,
+              contents: requestParams.contents,
+              config: currentConfig,
+            });
+            if (retryResponse && retryResponse.text) {
+              return retryResponse;
+            }
+          } catch (retryErr: any) {
+            lastError = retryErr;
+            console.warn(`Immediate retry without tools/schema for ${model} failed too:`, retryErr.message || String(retryErr));
           }
-        } catch (retryErr: any) {
-          lastError = retryErr;
-          console.warn(`Immediate retry without tools/schema for ${model} failed too:`, retryErr.message || String(retryErr));
         }
       }
 
-      // 高負荷（503 UNAVAILABLE / 429 RESOURCE_EXHAUSTED）やその他のエラーの場合、
-      // 自モデルでのSleep再試行は一切行わず、すぐに次のモデルの評価に移る（これが究極の高速化と安定化に繋がります）
+      // 503 (High demand) や 429 などの高負荷エラー、接続エラーの場合は
+      // 時間のかかるスリープ待機は一切行わず、即座に次の安定しているフォールバックモデルの試行へ移行する
     }
   }
 
@@ -83,7 +91,15 @@ export async function lookupGearAI(queryName: string) {
     throw new Error('GeminiのAPIキーが設定されていません。設定(MyPage)からAPIキーを登録してください。');
   }
 
-  const ai = new GoogleGenAI({ apiKey: apiKey });
+  // テレメトリー用に User-Agent を設定
+  const ai = new GoogleGenAI({
+    apiKey: apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  });
 
   const responseSchema = {
     type: Type.OBJECT,
@@ -118,7 +134,7 @@ export async function lookupGearAI(queryName: string) {
   const prompt = `Please search for the exact or close specifications of the following camping gear in Japanese databases or general knowledge: "${queryName}". Set category to one of ['Tent', 'Tarp', 'Chair', 'Table', 'Lantern', 'Cooking', 'Bedding', 'Other']. Provide its packed (storage) dimensions, expanded (setup) dimensions, weight, and short features description in Japanese. If detailed sizes are not available online, return highly plausible and realistic estimates for this item type.`;
 
   try {
-    // 1st Attempt: with Google Search grounding
+    // 1st Attempt: with Google Search grounding - using stable 'gemini-flash-latest' for high availability
     const response = await generateWithFallbackAndRetry(ai, {
       contents: prompt,
       config: {
@@ -126,7 +142,7 @@ export async function lookupGearAI(queryName: string) {
         responseSchema: responseSchema,
         tools: [{ googleSearch: {} }]
       }
-    }, "gemini-3.5-flash");
+    }, "gemini-flash-latest");
 
     const text = response.text;
     if (text) {
@@ -144,7 +160,7 @@ export async function lookupGearAI(queryName: string) {
         responseMimeType: "application/json",
         responseSchema: responseSchema
       }
-    }, "gemini-3.5-flash");
+    }, "gemini-flash-latest");
 
     const textFallback = responseFallback.text;
     if (!textFallback) {
@@ -163,7 +179,14 @@ export async function fetchWebShapeAI(name: string, category: string) {
     throw new Error('GeminiのAPIキーが設定されていません。');
   }
 
-  const ai = new GoogleGenAI({ apiKey: apiKey });
+  const ai = new GoogleGenAI({
+    apiKey: apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  });
 
   const responseSchema = {
     type: Type.OBJECT,
@@ -185,7 +208,7 @@ export async function fetchWebShapeAI(name: string, category: string) {
         responseSchema: responseSchema,
         tools: [{ googleSearch: {} }]
       }
-    }, "gemini-3.5-flash");
+    }, "gemini-flash-latest");
 
     const text = response.text;
     if (text) {
@@ -203,7 +226,7 @@ export async function fetchWebShapeAI(name: string, category: string) {
         responseMimeType: "application/json",
         responseSchema: responseSchema
       }
-    }, "gemini-3.5-flash");
+    }, "gemini-flash-latest");
 
     const textFallback = responseFallback.text;
     if (!textFallback) {
@@ -222,7 +245,14 @@ export async function analyzeImageAI(imageBase64: string, mimeType: string) {
     throw new Error('GeminiのAPIキーが設定されていません。');
   }
 
-  const ai = new GoogleGenAI({ apiKey: apiKey });
+  const ai = new GoogleGenAI({
+    apiKey: apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  });
 
   const responseSchema = {
     type: Type.OBJECT,
@@ -283,7 +313,7 @@ export async function analyzeImageAI(imageBase64: string, mimeType: string) {
         responseMimeType: "application/json",
         responseSchema: responseSchema
       }
-    }, "gemini-3.5-flash");
+    }, "gemini-flash-latest");
 
     const text = response.text;
     if (!text) {
@@ -305,12 +335,19 @@ export async function validateApiKeyAI(apiKey: string) {
   // APIキーから改行やスペースを完全に除去
   const cleanKey = apiKey.trim().replace(/[\s\r\n]+/g, '');
 
-  const ai = new GoogleGenAI({ apiKey: cleanKey });
+  const ai = new GoogleGenAI({
+    apiKey: cleanKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  });
   
-  // 疎通テスト
+  // 非常に軽量かつ最も安定している gemini-3.1-flash-lite で超爆速で疎通確認
   const response = await generateWithFallbackAndRetry(ai, {
     contents: "APIキーテスト。疎通確認が成功した場合は「OK」とのみ返答してください。"
-  }, "gemini-3.5-flash");
+  }, "gemini-3.1-flash-lite");
 
   const text = response.text;
   if (!text) {
