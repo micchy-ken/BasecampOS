@@ -18,7 +18,7 @@ const app = initializeApp(firebaseConfig);
 // AI Studioプレビューや一部環境でのWebSocket通信エラー（client is offline）を防ぐため、Long Pollingを強制
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true
-});
+}, "ai-studio-camppackinglayou-fd0e9c0e-9f7e-4d99-b8ba-457b5f2e6dfb");
 
 // Immediate connection test to log
 import { doc, getDoc } from "firebase/firestore";
