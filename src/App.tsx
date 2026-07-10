@@ -6,6 +6,7 @@ import GearEditModal from './components/GearEditModal';
 import PackingVisualizer from './components/PackingVisualizer';
 import CampsiteLayout from './components/CampsiteLayout';
 import MyPage from './components/MyPage';
+import FirebaseSync from './components/FirebaseSync';
 import { 
   Compass, 
   Layers, 
@@ -252,6 +253,7 @@ type TabType = 'packing' | 'layout' | 'inventory' | 'mypage';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('packing');
+  const [firebaseError, setFirebaseError] = useState<string | null>(null);
   const [editingGearId, setEditingGearId] = useState<string | null>(null);
 
   const handleEditGearInInventory = (id: string) => {
@@ -928,6 +930,18 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-[#F0EFEC] text-[#1A1A1A] font-sans antialiased selection:bg-[#FF5C00] selection:text-white" id="basecamp-os-root">
       
+      <FirebaseSync 
+        currentData={currentData} 
+        onLoadWorkspace={handleLoadWorkspace} 
+        onError={setFirebaseError}
+      />
+
+      {firebaseError && (
+        <div className="bg-red-600 text-white p-3 font-bold text-center fixed top-0 w-full z-50 shadow-md">
+          {firebaseError}
+        </div>
+      )}
+
       {/* HEADER SECTION IN ARTISTIC FLAIR MOOD */}
       <header className="h-24 sm:h-20 border-b-2 border-black flex flex-col sm:flex-row items-center justify-between px-6 sm:px-10 bg-white gap-2 py-2 sm:py-0 shrink-0">
         <div className="flex items-baseline gap-2.5">

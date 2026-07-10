@@ -18,5 +18,20 @@ const app = initializeApp(firebaseConfig);
 // 【超重要】エラーの原因になっていた特殊なID指定を完全に削除！！
 export const db = getFirestore(app);
 
+// Immediate connection test to log
+import { doc, getDoc } from "firebase/firestore";
+(async () => {
+  try {
+    console.log("🔥 Firebase init: 接続テストを開始します...");
+    // A simple read test
+    await getDoc(doc(db, "system", "ping"));
+    console.log("✅ Firebase init: 接続テスト成功！Firestoreと正常に通信できました。");
+  } catch (error: any) {
+    console.error("❌ Firebase init: 接続テスト失敗！", error);
+    // Force alert to screen if possible, but we don't have access to DOM directly yet
+    // We will rely on FirebaseSync for the on-screen alert.
+  }
+})();
+
 // Auth（認証）を初期化
 export const auth = getAuth(app);
