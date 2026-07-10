@@ -1,10 +1,10 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
 // Firebaseの接続設定（直接ハードコード）
 const firebaseConfig = {
-  apiKey: "AIzaSyAwYzWD0YH_jh2Sr1OfaS16ClJFkGRSXvU",
+  apiKey: "AIzaSyAwYzwD0YH_jh2SrlOfaS16ClJFkGRSXvU",
   authDomain: "gen-lang-client-0304293524.firebaseapp.com",
   projectId: "gen-lang-client-0304293524",
   storageBucket: "gen-lang-client-0304293524.firebasestorage.app",
@@ -15,21 +15,48 @@ const firebaseConfig = {
 // Firebaseアプリを初期化
 const app = initializeApp(firebaseConfig);
 
-// 【超重要】エラーの原因になっていた特殊なID指定を完全に削除！！
-export const db = getFirestore(app);
+// AI Studioプレビューや一部環境でのWebSocket通信エラー（client is offline）を防ぐため、Long Pollingを強制
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true
+});
 
 // Immediate connection test to log
 import { doc, getDoc } from "firebase/firestore";
+
+const showDebugMessage = (msg: string, isError: boolean = false) => {
+  if (typeof window !== "undefined" && window.document) {
+    const div = document.createElement("div");
+    div.style.position = "fixed";
+    div.style.top = "0";
+    div.style.left = "0";
+    div.style.width = "100%";
+    div.style.padding = "10px";
+    div.style.zIndex = "9999";
+    div.style.textAlign = "center";
+    div.style.fontWeight = "bold";
+    div.style.color = "white";
+    div.style.backgroundColor = isError ? "red" : "green";
+    div.innerText = msg;
+    document.body.appendChild(div);
+    
+    if (!isError) {
+      setTimeout(() => {
+        if (document.body.contains(div)) document.body.removeChild(div);
+      }, 5000);
+    }
+  }
+};
+
 (async () => {
   try {
     console.log("🔥 Firebase init: 接続テストを開始します...");
     // A simple read test
     await getDoc(doc(db, "system", "ping"));
     console.log("✅ Firebase init: 接続テスト成功！Firestoreと正常に通信できました。");
+    showDebugMessage("✅ Firebase接続テスト成功！Firestoreと正常に通信できました。");
   } catch (error: any) {
     console.error("❌ Firebase init: 接続テスト失敗！", error);
-    // Force alert to screen if possible, but we don't have access to DOM directly yet
-    // We will rely on FirebaseSync for the on-screen alert.
+    showDebugMessage(`❌ Firebaseエラー: ${error.message}`, true);
   }
 })();
 
