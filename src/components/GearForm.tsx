@@ -188,11 +188,8 @@ export default function GearForm({ onAddGear, onAddMultipleGears, onSyncGears, o
       }
     } catch (err: any) {
       console.warn("API lookup failed. Triggering offline automatic heuristic estimation.", err);
-      if (err.message.includes('APIキー')) {
-        setSearchError(err.message);
-      } else {
-        setSearchError('情報の取得に失敗しました。一時的な仮サイズを割り当てます。');
-      }
+      const detailMsg = err.message || String(err);
+      setSearchError(`情報の取得に失敗しました。(${detailMsg}) 一時的な仮サイズを割り当てます。`);
       applyLocalHeuristicFallback(lookupQuery);
     } finally {
       setIsSearching(false);

@@ -40,22 +40,46 @@ export async function lookupGearAI(queryName: string) {
 
   const prompt = `Please search for the exact or close specifications of the following camping gear in Japanese databases or general knowledge: "${queryName}". Set category to one of ['Tent', 'Tarp', 'Chair', 'Table', 'Lantern', 'Cooking', 'Bedding', 'Other']. Provide its packed (storage) dimensions, expanded (setup) dimensions, weight, and short features description in Japanese. If detailed sizes are not available online, return highly plausible and realistic estimates for this item type.`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3.5-flash",
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: responseSchema,
-      tools: [{ googleSearch: {} }]
-    }
-  });
+  try {
+    // 1st Attempt: with Google Search grounding
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: responseSchema,
+        tools: [{ googleSearch: {} }]
+      }
+    });
 
-  const text = response.text;
-  if (!text) {
-    throw new Error('AIから応答がありませんでした');
+    const text = response.text;
+    if (text) {
+      return JSON.parse(text);
+    }
+  } catch (searchError: any) {
+    console.warn("AI lookup with Google Search failed, retrying without Search...", searchError);
   }
 
-  return JSON.parse(text);
+  // 2nd Attempt: fallback to pure generative lookup without googleSearch
+  try {
+    const responseFallback = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: responseSchema
+      }
+    });
+
+    const textFallback = responseFallback.text;
+    if (!textFallback) {
+      throw new Error('AIから応答がありませんでした');
+    }
+    return JSON.parse(textFallback);
+  } catch (err: any) {
+    console.error("AI lookup failed completely:", err);
+    throw new Error(`AIスペック取得エラー: ${err.message || err}`);
+  }
 }
 
 export async function fetchWebShapeAI(name: string, category: string) {
@@ -69,30 +93,54 @@ export async function fetchWebShapeAI(name: string, category: string) {
   const responseSchema = {
     type: Type.OBJECT,
     properties: {
-      polygon: { type: Type.STRING, description: "A CSS clip-path polygon value, e.g., '20% 0%, 80% 0%, 100% 100%, 0% 100%'. No outer polygon(...) wrapper is required, just the interior coordinates like '20% 0%, 80% 0%, 100% 100%, 0% 100%'." },
-      description: { type: Type.STRING, description: "Short explanation in Japanese of the polygon vector coordinates, e.g. 'ヘキサタープの2ポール張りを再現した六角形です。'" }
+      polygon: { type: Type.STRING, description: "A CSS clip-path polygon value, e.g., '20% 0%, 80% 0%, 100% 100%, 0% 100%'. No outer polygon(...) wrapper is required, just the interior coordinates like '20% 0%, 80% 0%, 100% 100%, 0% 100%'" },
+      description: { type: Type.STRING, description: "Short explanation in Japanese of the polygon vector coordinates, e.g. 'ヘキサタープ of 2ポール張りを再現した六角形です。'" }
     },
     required: ["polygon", "description"]
   };
 
   const prompt = `Please search and estimate the exact or close floor plan / projection layout outline of the following outdoor camping gear in Japanese: "${name}" (Category: "${category}"). Convert its 2D top-down shape boundaries into a sequence of percentages for a CSS clip-path mask, returned strictly as a sequence of x% y% coordinate points like '20% 0%, 80% 0%, 100% 100%, 0% 100%' (do not include the outer 'polygon(...)', just the points themselves). For example, a trapezoidal tunnel tent might be '15% 0%, 85% 0%, 100% 100%, 0% 100%', a bell tent might be an octagon, a hexatarp is a 6-point shape. Make it accurate for this specific model!`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3.5-flash",
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: responseSchema,
-      tools: [{ googleSearch: {} }]
-    }
-  });
+  try {
+    // 1st Attempt: with googleSearch
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: responseSchema,
+        tools: [{ googleSearch: {} }]
+      }
+    });
 
-  const text = response.text;
-  if (!text) {
-    throw new Error("Empty response from AI for shape fetch");
+    const text = response.text;
+    if (text) {
+      return JSON.parse(text);
+    }
+  } catch (err: any) {
+    console.warn("Shape fetch with Google Search failed, retrying without Search...", err);
   }
 
-  return JSON.parse(text);
+  // 2nd Attempt: without googleSearch
+  try {
+    const responseFallback = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: responseSchema
+      }
+    });
+
+    const textFallback = responseFallback.text;
+    if (!textFallback) {
+      throw new Error("Empty response from AI for shape fetch");
+    }
+    return JSON.parse(textFallback);
+  } catch (err: any) {
+    console.error("fetchWebShapeAI failed completely:", err);
+    throw new Error(`平面形状取得エラー: ${err.message || err}`);
+  }
 }
 
 export async function analyzeImageAI(imageBase64: string, mimeType: string) {
@@ -147,30 +195,34 @@ export async function analyzeImageAI(imageBase64: string, mimeType: string) {
   - If packed/storage dimensions or weight are not directly written, provide realistic standard estimates for this specific class of item.
   - Write a helpful Japanese explanation ('description') explaining how you read the dimensions and shapes from the illustration.`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3.5-flash",
-    contents: [
-      prompt,
-      {
-        inlineData: {
-          data: imageBase64,
-          mimeType: mimeType
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: [
+        prompt,
+        {
+          inlineData: {
+            data: imageBase64,
+            mimeType: mimeType
+          }
         }
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: responseSchema
       }
-    ],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: responseSchema,
-      tools: [{ googleSearch: {} }]
+    });
+
+    const text = response.text;
+    if (!text) {
+      throw new Error("Empty response from AI for image analysis");
     }
-  });
 
-  const text = response.text;
-  if (!text) {
-    throw new Error("Empty response from AI for image analysis");
+    return JSON.parse(text);
+  } catch (err: any) {
+    console.error("analyzeImageAI failed:", err);
+    throw new Error(`画像解析エラー: ${err.message || err}`);
   }
-
-  return JSON.parse(text);
 }
 
 export async function validateApiKeyAI(apiKey: string) {
