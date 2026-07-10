@@ -9,6 +9,26 @@ interface FirebaseSyncProps {
   onStatusChange?: (status: 'connecting' | 'connected' | 'error') => void;
 }
 
+function sanitizeFirestoreData(val: any): any {
+  if (val === undefined) return null;
+  if (val === null) return null;
+  if (Array.isArray(val)) {
+    return val.map(sanitizeFirestoreData);
+  }
+  if (typeof val === 'object') {
+    const res: any = {};
+    for (const key in val) {
+      if (Object.prototype.hasOwnProperty.call(val, key)) {
+        if (val[key] !== undefined) {
+          res[key] = sanitizeFirestoreData(val[key]);
+        }
+      }
+    }
+    return res;
+  }
+  return val;
+}
+
 export default function FirebaseSync({ currentData, onLoadWorkspace, onError, onStatusChange }: FirebaseSyncProps) {
 
   useEffect(() => {
@@ -55,7 +75,8 @@ export default function FirebaseSync({ currentData, onLoadWorkspace, onError, on
     // throttle writes
     const timeout = setTimeout(() => {
       const docRef = doc(db, 'workspaces', 'default');
-      setDoc(docRef, currentData, { merge: true })
+      const sanitized = sanitizeFirestoreData(currentData);
+      setDoc(docRef, sanitized, { merge: true })
         .catch(error => {
           console.error("FirebaseSync: setDoc エラー:", error);
           onError(`Firebase保存エラー: ${error.message}`);
