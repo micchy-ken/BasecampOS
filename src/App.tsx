@@ -256,6 +256,29 @@ export default function App() {
   const [firebaseError, setFirebaseError] = useState<string | null>(null);
   const [editingGearId, setEditingGearId] = useState<string | null>(null);
 
+  const [firebaseStatus, setFirebaseStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
+  const [aiApiStatus, setAiApiStatus] = useState<'not_configured' | 'valid' | 'invalid' | 'validating'>('not_configured');
+
+  useEffect(() => {
+    const checkApiKeyOnInit = async () => {
+      const savedKey = localStorage.getItem('basecamp_os_gemini_api_key');
+      if (!savedKey || !savedKey.trim()) {
+        setAiApiStatus('not_configured');
+        return;
+      }
+      setAiApiStatus('validating');
+      try {
+        const { validateApiKeyAI } = await import('./lib/ai');
+        await validateApiKeyAI(savedKey);
+        setAiApiStatus('valid');
+      } catch (err) {
+        console.warn("Initial API key check failed:", err);
+        setAiApiStatus('invalid');
+      }
+    };
+    checkApiKeyOnInit();
+  }, []);
+
   const handleEditGearInInventory = (id: string) => {
     setEditingGearId(id);
   };
@@ -934,7 +957,74 @@ export default function App() {
         currentData={currentData} 
         onLoadWorkspace={handleLoadWorkspace} 
         onError={setFirebaseError}
+        onStatusChange={setFirebaseStatus}
       />
+
+      {/* LED STATUS MONITOR BAR */}
+      <div className="bg-[#121212] text-[#A0A0A0] text-[10px] sm:text-[11px] font-mono tracking-wider px-4 sm:px-6 py-1.5 flex flex-wrap items-center justify-between border-b border-black select-none gap-3 shrink-0">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <span className="text-[#FF5C00] uppercase font-black text-[9px] tracking-widest">Basecamp.OS Monitor</span>
+          <span className="text-stone-700 hidden sm:inline">|</span>
+          
+          {/* Firebase LED */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-stone-400">Firebase:</span>
+            <div className="flex items-center gap-1">
+              <span className={`inline-block w-2 h-2 rounded-full relative ${
+                firebaseStatus === 'connected' 
+                  ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' 
+                  : firebaseStatus === 'connecting'
+                    ? 'bg-amber-450 shadow-[0_0_8px_#fbbf24] animate-pulse'
+                    : 'bg-rose-500 shadow-[0_0_8px_#ef4444]'
+              }`}>
+                {firebaseStatus === 'connected' && (
+                  <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-75"></span>
+                )}
+              </span>
+              <span className="font-extrabold text-white text-[10px]">
+                {firebaseStatus === 'connected' && 'CONNECTED (正常同期中)'}
+                {firebaseStatus === 'connecting' && 'CONNECTING (接続中...)'}
+                {firebaseStatus === 'error' && 'ERROR (オフライン/接続エラー)'}
+              </span>
+            </div>
+          </div>
+          
+          <span className="text-stone-700 hidden sm:inline">/</span>
+
+          {/* AI API LED */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-stone-400">Gemini AI API:</span>
+            <div className="flex items-center gap-1">
+              <span className={`inline-block w-2 h-2 rounded-full relative ${
+                aiApiStatus === 'valid' 
+                  ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' 
+                  : aiApiStatus === 'validating'
+                    ? 'bg-amber-450 shadow-[0_0_8px_#fbbf24] animate-pulse'
+                    : aiApiStatus === 'invalid'
+                      ? 'bg-rose-500 shadow-[0_0_8px_#ef4444]'
+                      : 'bg-stone-600'
+              }`}>
+                {aiApiStatus === 'valid' && (
+                  <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-75"></span>
+                )}
+              </span>
+              <span className="font-extrabold text-white text-[10px]">
+                {aiApiStatus === 'valid' && 'ACTIVE (認証済/利用可能)'}
+                {aiApiStatus === 'validating' && 'VALIDATING (疎通確認中...)'}
+                {aiApiStatus === 'invalid' && 'INVALID (APIキー認証エラー)'}
+                {aiApiStatus === 'not_configured' && 'NOT CONFIGURED (未設定)'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 text-stone-500 text-[9px] uppercase font-bold ml-auto sm:ml-0">
+          <span className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span>
+            Cloud Firestore Realtime Sync
+          </span>
+        </div>
+      </div>
 
       {firebaseError && (
         <div className="bg-red-600 text-white p-3 font-bold text-center fixed top-0 w-full z-50 shadow-md">
@@ -1133,6 +1223,7 @@ export default function App() {
             setVehiclesList={setVehiclesList}
             currentData={currentData}
             onLoadWorkspace={handleLoadWorkspace}
+            onApiKeyStatusChange={setAiApiStatus}
           />
         )}
 

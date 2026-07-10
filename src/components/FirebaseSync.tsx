@@ -6,26 +6,27 @@ interface FirebaseSyncProps {
   currentData: any;
   onLoadWorkspace: (data: any) => void;
   onError: (errorMsg: string) => void;
+  onStatusChange?: (status: 'connecting' | 'connected' | 'error') => void;
 }
 
-export default function FirebaseSync({ currentData, onLoadWorkspace, onError }: FirebaseSyncProps) {
-  const [successMsg, setSuccessMsg] = React.useState<string | null>(null);
+export default function FirebaseSync({ currentData, onLoadWorkspace, onError, onStatusChange }: FirebaseSyncProps) {
 
   useEffect(() => {
     // 接続テスト
     console.log("FirebaseSync: 接続開始");
+    if (onStatusChange) onStatusChange('connecting');
     const testDocRef = doc(db, 'system', 'connection_test');
     setDoc(testDocRef, { lastConnected: new Date().toISOString() }, { merge: true })
       .then(() => {
         console.log("FirebaseSync: 接続成功！");
-        setSuccessMsg("🔥 Firebaseに正常に接続しました！");
-        setTimeout(() => setSuccessMsg(null), 5000); // 5秒後に消す
+        if (onStatusChange) onStatusChange('connected');
       })
       .catch((error) => {
         console.error("FirebaseSync: 接続失敗:", error);
+        if (onStatusChange) onStatusChange('error');
         onError(`Firebase接続エラー: ${error.message}`);
       });
-  }, [onError]);
+  }, [onError, onStatusChange]);
 
   const onLoadRef = React.useRef(onLoadWorkspace);
   React.useEffect(() => {
@@ -64,13 +65,5 @@ export default function FirebaseSync({ currentData, onLoadWorkspace, onError }: 
     return () => clearTimeout(timeout);
   }, [currentData, onError]);
 
-  return (
-    <>
-      {successMsg && (
-        <div className="bg-emerald-600 text-white p-3 font-bold text-center fixed top-10 w-full z-50 shadow-md">
-          {successMsg}
-        </div>
-      )}
-    </>
-  );
+  return null;
 }

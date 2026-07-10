@@ -34,6 +34,7 @@ interface MyPageProps {
     activePresetSite: string;
   };
   onLoadWorkspace: (data: any) => void;
+  onApiKeyStatusChange?: (status: 'not_configured' | 'valid' | 'invalid' | 'validating') => void;
 }
 
 export default function MyPage({
@@ -44,7 +45,8 @@ export default function MyPage({
   onRemoveCustomVehicle,
   setVehiclesList,
   currentData,
-  onLoadWorkspace
+  onLoadWorkspace,
+  onApiKeyStatusChange
 }: MyPageProps) {
 
   // Vehicle customisation fields
@@ -82,6 +84,7 @@ export default function MyPage({
     if (!trimmedKey) {
       localStorage.removeItem('basecamp_os_gemini_api_key');
       setApiSaveMsg({ type: 'success', text: 'APIキーを消去しました。' });
+      if (onApiKeyStatusChange) onApiKeyStatusChange('not_configured');
       setTimeout(() => setApiSaveMsg(null), 4000);
       return;
     }
@@ -91,6 +94,7 @@ export default function MyPage({
 
     setIsValidatingApi(true);
     setApiSaveMsg(null);
+    if (onApiKeyStatusChange) onApiKeyStatusChange('validating');
     try {
       const { validateApiKeyAI } = await import('../lib/ai');
       await validateApiKeyAI(cleanKey);
@@ -99,11 +103,13 @@ export default function MyPage({
       localStorage.setItem('basecamp_os_gemini_api_key', cleanKey);
       setGeminiApiKey(cleanKey);
       setApiSaveMsg({ type: 'success', text: 'Gemini APIキーの疎通確認に成功しました！APIキーを保存しました。AI自動寸法補完などの機能がご利用いただけます。' });
+      if (onApiKeyStatusChange) onApiKeyStatusChange('valid');
     } catch (err: any) {
       setApiSaveMsg({ 
         type: 'error', 
         text: `APIキーの検証に失敗しました。キーが間違っているか、Google AI Studioの利用可能枠を超えている可能性があります。エラー詳細: ${err.message || err}` 
       });
+      if (onApiKeyStatusChange) onApiKeyStatusChange('invalid');
     } finally {
       setIsValidatingApi(false);
     }
