@@ -1,5 +1,101 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
+// 堅牢な再試行およびモデルフォールバック機構を備えた共通呼び出し関数
+async function generateWithFallbackAndRetry(
+  ai: any,
+  requestParams: { contents: any; config?: any },
+  preferredModel: string = "gemini-2.5-flash"
+) {
+  // 安定性が高く高速な 2.5-flash を優先し、必要に応じて他のモデルへフォールバック
+  const models = [preferredModel, "gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.5-flash"];
+  const uniqueModels = Array.from(new Set(models));
+
+  let lastError: any = null;
+
+  for (const model of uniqueModels) {
+    const maxRetries = 2; // 各モデルにつき最大2回再試行 (初回＋再試行2回 = 計3回)
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      let currentConfig = requestParams.config ? { ...requestParams.config } : undefined;
+      
+      try {
+        console.log(`Calling Gemini API using model: ${model} (attempt ${attempt + 1})`);
+        const response = await ai.models.generateContent({
+          model: model,
+          contents: requestParams.contents,
+          config: currentConfig,
+        });
+        if (response && response.text) {
+          return response;
+        }
+        throw new Error("Received empty response from Gemini API");
+      } catch (err: any) {
+        lastError = err;
+        const errMsg = err.message || String(err);
+        console.warn(`Attempt ${attempt + 1} with model ${model} failed:`, errMsg);
+
+        // ツール(Google Search)やレスポンススキーマに関するエラーの場合、それらを外して再試行
+        const isToolOrSchemaError = 
+          errMsg.includes("tool") || 
+          errMsg.includes("search") || 
+          errMsg.includes("schema") || 
+          errMsg.includes("INVALID_ARGUMENT") ||
+          errMsg.includes("400");
+
+        if (isToolOrSchemaError && currentConfig && (currentConfig.tools || currentConfig.responseSchema)) {
+          console.warn("Attempting fallback by stripping tools or responseSchema...");
+          let stripped = false;
+          if (currentConfig.tools) {
+            delete currentConfig.tools;
+            stripped = true;
+          } else if (currentConfig.responseSchema) {
+            delete currentConfig.responseSchema;
+            if (currentConfig.responseMimeType === "application/json") {
+              delete currentConfig.responseMimeType;
+            }
+            stripped = true;
+          }
+          
+          if (stripped) {
+            try {
+              const retryResponse = await ai.models.generateContent({
+                model: model,
+                contents: requestParams.contents,
+                config: currentConfig,
+              });
+              if (retryResponse && retryResponse.text) {
+                return retryResponse;
+              }
+            } catch (retryErr: any) {
+              lastError = retryErr;
+            }
+          }
+        }
+
+        // 一時的な高負荷（503/429等）であるか判定
+        const isTransient = 
+          errMsg.includes("503") || 
+          errMsg.includes("429") || 
+          errMsg.includes("UNAVAILABLE") || 
+          errMsg.includes("RESOURCE_EXHAUSTED") || 
+          errMsg.includes("high demand") ||
+          errMsg.includes("temporary");
+
+        if (attempt < maxRetries && isTransient) {
+          // 指数バックオフ (1000ms, 2000ms)
+          const delay = Math.pow(2, attempt) * 1000;
+          console.log(`Transient error. Retrying in ${delay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          // 一時的でないエラー、または再試行上限に達した場合は、次のモデルへ移行
+          break;
+        }
+      }
+    }
+  }
+
+  throw lastError || new Error("Gemini API call failed on all fallback models.");
+}
+
 export async function lookupGearAI(queryName: string) {
   const apiKey = localStorage.getItem('basecamp_os_gemini_api_key');
   if (!apiKey) {
@@ -42,15 +138,14 @@ export async function lookupGearAI(queryName: string) {
 
   try {
     // 1st Attempt: with Google Search grounding
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+    const response = await generateWithFallbackAndRetry(ai, {
       contents: prompt,
       config: {
         responseMimeType: "application/json",
         responseSchema: responseSchema,
         tools: [{ googleSearch: {} }]
       }
-    });
+    }, "gemini-2.5-flash");
 
     const text = response.text;
     if (text) {
@@ -62,14 +157,13 @@ export async function lookupGearAI(queryName: string) {
 
   // 2nd Attempt: fallback to pure generative lookup without googleSearch
   try {
-    const responseFallback = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+    const responseFallback = await generateWithFallbackAndRetry(ai, {
       contents: prompt,
       config: {
         responseMimeType: "application/json",
         responseSchema: responseSchema
       }
-    });
+    }, "gemini-2.5-flash");
 
     const textFallback = responseFallback.text;
     if (!textFallback) {
@@ -103,15 +197,14 @@ export async function fetchWebShapeAI(name: string, category: string) {
 
   try {
     // 1st Attempt: with googleSearch
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+    const response = await generateWithFallbackAndRetry(ai, {
       contents: prompt,
       config: {
         responseMimeType: "application/json",
         responseSchema: responseSchema,
         tools: [{ googleSearch: {} }]
       }
-    });
+    }, "gemini-2.5-flash");
 
     const text = response.text;
     if (text) {
@@ -123,14 +216,13 @@ export async function fetchWebShapeAI(name: string, category: string) {
 
   // 2nd Attempt: without googleSearch
   try {
-    const responseFallback = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+    const responseFallback = await generateWithFallbackAndRetry(ai, {
       contents: prompt,
       config: {
         responseMimeType: "application/json",
         responseSchema: responseSchema
       }
-    });
+    }, "gemini-2.5-flash");
 
     const textFallback = responseFallback.text;
     if (!textFallback) {
@@ -196,8 +288,7 @@ export async function analyzeImageAI(imageBase64: string, mimeType: string) {
   - Write a helpful Japanese explanation ('description') explaining how you read the dimensions and shapes from the illustration.`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+    const response = await generateWithFallbackAndRetry(ai, {
       contents: [
         prompt,
         {
@@ -211,7 +302,7 @@ export async function analyzeImageAI(imageBase64: string, mimeType: string) {
         responseMimeType: "application/json",
         responseSchema: responseSchema
       }
-    });
+    }, "gemini-2.5-flash");
 
     const text = response.text;
     if (!text) {
@@ -235,11 +326,10 @@ export async function validateApiKeyAI(apiKey: string) {
 
   const ai = new GoogleGenAI({ apiKey: cleanKey });
   
-  // 軽量高速で確実に利用可能な gemini-3.5-flash を使用して疎通テスト
-  const response = await ai.models.generateContent({
-    model: "gemini-3.5-flash",
-    contents: "APIキーテスト。疎通確認が成功した場合は「OK」とのみ返答してください。",
-  });
+  // 疎通テスト
+  const response = await generateWithFallbackAndRetry(ai, {
+    contents: "APIキーテスト。疎通確認が成功した場合は「OK」とのみ返答してください。"
+  }, "gemini-2.5-flash");
 
   const text = response.text;
   if (!text) {
