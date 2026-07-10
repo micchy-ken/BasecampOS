@@ -1,95 +1,76 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-// 堅牢な再試行およびモデルフォールバック機構を備えた共通呼び出し関数
+// 堅牢かつ超高速なモデルフォールバック機構を備えた共通呼び出し関数
 async function generateWithFallbackAndRetry(
   ai: any,
   requestParams: { contents: any; config?: any },
-  preferredModel: string = "gemini-2.5-flash"
+  preferredModel: string = "gemini-3.5-flash"
 ) {
-  // 安定性が高く高速な 2.5-flash を優先し、必要に応じて他のモデルへフォールバック
-  const models = [preferredModel, "gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.5-flash"];
+  // 安定性が高く高速な 3.5-flash を最優先し、次に 2.5-flash, 1.5-flash へ順次フォールバック
+  const models = [preferredModel, "gemini-3.5-flash", "gemini-2.5-flash", "gemini-1.5-flash"];
   const uniqueModels = Array.from(new Set(models));
 
   let lastError: any = null;
 
   for (const model of uniqueModels) {
-    const maxRetries = 2; // 各モデルにつき最大2回再試行 (初回＋再試行2回 = 計3回)
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      let currentConfig = requestParams.config ? { ...requestParams.config } : undefined;
-      
-      try {
-        console.log(`Calling Gemini API using model: ${model} (attempt ${attempt + 1})`);
-        const response = await ai.models.generateContent({
-          model: model,
-          contents: requestParams.contents,
-          config: currentConfig,
-        });
-        if (response && response.text) {
-          return response;
-        }
-        throw new Error("Received empty response from Gemini API");
-      } catch (err: any) {
-        lastError = err;
-        const errMsg = err.message || String(err);
-        console.warn(`Attempt ${attempt + 1} with model ${model} failed:`, errMsg);
+    // 各モデルに対して毎回オリジナルの設定のディープコピーを用意
+    let currentConfig = requestParams.config ? JSON.parse(JSON.stringify(requestParams.config)) : undefined;
+    
+    try {
+      console.log(`Calling Gemini API using model: ${model}`);
+      const response = await ai.models.generateContent({
+        model: model,
+        contents: requestParams.contents,
+        config: currentConfig,
+      });
+      if (response && response.text) {
+        return response;
+      }
+      throw new Error("Received empty response from Gemini API");
+    } catch (err: any) {
+      lastError = err;
+      const errMsg = err.message || String(err);
+      console.warn(`Model ${model} failed:`, errMsg);
 
-        // ツール(Google Search)やレスポンススキーマに関するエラーの場合、それらを外して再試行
-        const isToolOrSchemaError = 
-          errMsg.includes("tool") || 
-          errMsg.includes("search") || 
-          errMsg.includes("schema") || 
-          errMsg.includes("INVALID_ARGUMENT") ||
-          errMsg.includes("400");
+      // Searchツールやレスポンススキーマに関わるエラー、またはツール自体が存在するなら、
+      // ツールやスキーマをその場で即座に剥がして、同モデルで1回だけ即時再試行
+      const isToolOrSchemaError = 
+        errMsg.includes("tool") || 
+        errMsg.includes("search") || 
+        errMsg.includes("schema") || 
+        errMsg.includes("INVALID_ARGUMENT") ||
+        errMsg.includes("400") ||
+        errMsg.includes("not supported") ||
+        (currentConfig && currentConfig.tools);
 
-        if (isToolOrSchemaError && currentConfig && (currentConfig.tools || currentConfig.responseSchema)) {
-          console.warn("Attempting fallback by stripping tools or responseSchema...");
-          let stripped = false;
-          if (currentConfig.tools) {
-            delete currentConfig.tools;
-            stripped = true;
-          } else if (currentConfig.responseSchema) {
-            delete currentConfig.responseSchema;
-            if (currentConfig.responseMimeType === "application/json") {
-              delete currentConfig.responseMimeType;
-            }
-            stripped = true;
-          }
-          
-          if (stripped) {
-            try {
-              const retryResponse = await ai.models.generateContent({
-                model: model,
-                contents: requestParams.contents,
-                config: currentConfig,
-              });
-              if (retryResponse && retryResponse.text) {
-                return retryResponse;
-              }
-            } catch (retryErr: any) {
-              lastError = retryErr;
-            }
+      if (isToolOrSchemaError && currentConfig && (currentConfig.tools || currentConfig.responseSchema)) {
+        console.warn(`Attempting immediate fallback for ${model} by stripping tools or responseSchema...`);
+        if (currentConfig.tools) {
+          delete currentConfig.tools;
+        } else if (currentConfig.responseSchema) {
+          delete currentConfig.responseSchema;
+          if (currentConfig.responseMimeType === "application/json") {
+            delete currentConfig.responseMimeType;
           }
         }
-
-        // 一時的な高負荷（503/429等）であるか判定
-        const isTransient = 
-          errMsg.includes("503") || 
-          errMsg.includes("429") || 
-          errMsg.includes("UNAVAILABLE") || 
-          errMsg.includes("RESOURCE_EXHAUSTED") || 
-          errMsg.includes("high demand") ||
-          errMsg.includes("temporary");
-
-        if (attempt < maxRetries && isTransient) {
-          // 指数バックオフ (1000ms, 2000ms)
-          const delay = Math.pow(2, attempt) * 1000;
-          console.log(`Transient error. Retrying in ${delay}ms...`);
-          await new Promise((resolve) => setTimeout(resolve, delay));
-        } else {
-          // 一時的でないエラー、または再試行上限に達した場合は、次のモデルへ移行
-          break;
+        
+        try {
+          const retryResponse = await ai.models.generateContent({
+            model: model,
+            contents: requestParams.contents,
+            config: currentConfig,
+          });
+          if (retryResponse && retryResponse.text) {
+            return retryResponse;
+          }
+        } catch (retryErr: any) {
+          lastError = retryErr;
+          console.warn(`Immediate retry without tools/schema for ${model} failed too:`, retryErr.message || String(retryErr));
         }
       }
+
+      // 高負荷（503 UNAVAILABLE / 429 RESOURCE_EXHAUSTED）やその他のエラーの場合、
+      // 自モデルでのSleep再試行は一切行わず、すぐに次のモデルの評価に移る（これが究極の高速化と安定化に繋がります）
     }
   }
 
@@ -145,7 +126,7 @@ export async function lookupGearAI(queryName: string) {
         responseSchema: responseSchema,
         tools: [{ googleSearch: {} }]
       }
-    }, "gemini-2.5-flash");
+    }, "gemini-3.5-flash");
 
     const text = response.text;
     if (text) {
@@ -163,7 +144,7 @@ export async function lookupGearAI(queryName: string) {
         responseMimeType: "application/json",
         responseSchema: responseSchema
       }
-    }, "gemini-2.5-flash");
+    }, "gemini-3.5-flash");
 
     const textFallback = responseFallback.text;
     if (!textFallback) {
@@ -204,7 +185,7 @@ export async function fetchWebShapeAI(name: string, category: string) {
         responseSchema: responseSchema,
         tools: [{ googleSearch: {} }]
       }
-    }, "gemini-2.5-flash");
+    }, "gemini-3.5-flash");
 
     const text = response.text;
     if (text) {
@@ -222,7 +203,7 @@ export async function fetchWebShapeAI(name: string, category: string) {
         responseMimeType: "application/json",
         responseSchema: responseSchema
       }
-    }, "gemini-2.5-flash");
+    }, "gemini-3.5-flash");
 
     const textFallback = responseFallback.text;
     if (!textFallback) {
@@ -302,7 +283,7 @@ export async function analyzeImageAI(imageBase64: string, mimeType: string) {
         responseMimeType: "application/json",
         responseSchema: responseSchema
       }
-    }, "gemini-2.5-flash");
+    }, "gemini-3.5-flash");
 
     const text = response.text;
     if (!text) {
@@ -329,7 +310,7 @@ export async function validateApiKeyAI(apiKey: string) {
   // 疎通テスト
   const response = await generateWithFallbackAndRetry(ai, {
     contents: "APIキーテスト。疎通確認が成功した場合は「OK」とのみ返答してください。"
-  }, "gemini-2.5-flash");
+  }, "gemini-3.5-flash");
 
   const text = response.text;
   if (!text) {
