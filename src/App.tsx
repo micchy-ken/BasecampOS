@@ -651,6 +651,13 @@ export default function App() {
     }
   };
 
+  const handleRestoreDefaultVehicles = () => {
+    setVehiclesList(prev => {
+      const missing = DEFAULT_VEHICLES.filter(df => !prev.some(v => v.id === df.id || v.type === df.type));
+      return [...prev, ...missing];
+    });
+  };
+
   // Campsite Layout Saved Profiles Management Handlers
   const handleSaveLayoutProfile = (name: string) => {
     const newProfile: LayoutProfile = {
@@ -1146,6 +1153,7 @@ export default function App() {
             onUpdateVehicleSeatMode={handleUpdateVehicleSeatMode}
             onAddCustomVehicle={handleAddCustomVehicle}
             onRemoveCustomVehicle={handleRemoveCustomVehicle}
+            onRestoreDefaultVehicles={handleRestoreDefaultVehicles}
             baggages={baggages}
             onAddBaggage={handleAddBaggage}
             onRemoveBaggage={handleRemoveBaggage}
@@ -1220,6 +1228,7 @@ export default function App() {
             setCurrentVehicle={handleSwitchVehicle}
             onAddCustomVehicle={handleAddCustomVehicle}
             onRemoveCustomVehicle={handleRemoveCustomVehicle}
+            onRestoreDefaultVehicles={handleRestoreDefaultVehicles}
             setVehiclesList={setVehiclesList}
             currentData={currentData}
             onLoadWorkspace={handleLoadWorkspace}

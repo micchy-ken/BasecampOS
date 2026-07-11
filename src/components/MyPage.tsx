@@ -20,6 +20,7 @@ interface MyPageProps {
   setCurrentVehicle: (vehicle: Vehicle) => void;
   onAddCustomVehicle: (newVehicle: Omit<Vehicle, 'id' | 'rearSeatMode'>) => void;
   onRemoveCustomVehicle: (id: string) => void;
+  onRestoreDefaultVehicles?: () => void;
   setVehiclesList: React.Dispatch<React.SetStateAction<Vehicle[]>>;
   currentData: {
     gears: any[];
@@ -43,6 +44,7 @@ export default function MyPage({
   setCurrentVehicle,
   onAddCustomVehicle,
   onRemoveCustomVehicle,
+  onRestoreDefaultVehicles,
   setVehiclesList,
   currentData,
   onLoadWorkspace,
@@ -293,15 +295,21 @@ export default function MyPage({
                     <span className="font-extrabold text-xs tracking-tight truncate max-w-[80%]">
                       {v.name}
                     </span>
-                    {vehicles.length > 1 && (v.id && v.id.startsWith('vehicle-custom-')) && (
+                    {vehicles.length > 1 && (
                       <button
+                        type="button"
                         onClick={(e) => {
+                          e.preventDefault();
                           e.stopPropagation();
-                          if (confirm(`カスタム車両 「${v.name}」 を削除しますか？`)) {
-                            onRemoveCustomVehicle(v.id);
+                          const isCustom = v.id && v.id.startsWith('vehicle-custom-');
+                          const confirmMsg = isCustom
+                            ? `カスタム車両 「${v.name}」 を削除しますか？`
+                            : `プリセット車両 「${v.name}」 をリストから非表示（削除）にしますか？\n（マイページの「🔄 プリセット復元」ボタンからいつでも元に戻せます）`;
+                          if (confirm(confirmMsg)) {
+                            onRemoveCustomVehicle(v.id || v.type);
                           }
                         }}
-                        className={`hover:text-red-500 font-bold text-xs p-1 ${isActive ? 'text-rose-400' : 'text-slate-400'}`}
+                        className={`hover:text-red-500 font-bold text-xs p-1 transition-colors ${isActive ? 'text-rose-400 hover:text-rose-200' : 'text-slate-400'}`}
                         title="車両削除"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -319,6 +327,24 @@ export default function MyPage({
               );
             })}
           </div>
+
+          {(() => {
+            const isDefaultMissing = !vehicles.some(veh => veh.id === 'aqua' || veh.type === 'aqua') ||
+                                     !vehicles.some(veh => veh.id === 'suv' || veh.type === 'suv') ||
+                                     !vehicles.some(veh => veh.id === 'minivan' || veh.type === 'minivan');
+            return isDefaultMissing && onRestoreDefaultVehicles && (
+              <div className="mt-4 flex justify-end animate-fade-in">
+                <button
+                  type="button"
+                  onClick={onRestoreDefaultVehicles}
+                  className="px-3 py-1.5 border-2 border-dashed border-indigo-600 text-indigo-700 hover:bg-indigo-50 font-extrabold text-xs uppercase tracking-tight transition-all cursor-pointer flex items-center gap-1 shadow-[2px_2px_0px_0px_rgba(79,70,229,0.2)] active:scale-95"
+                  title="削除された初期のプリセット車両をリストにすべて復元します"
+                >
+                  🔄 削除したプリセット車両をすべて復元
+                </button>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Detailed Spec Customiser Card */}

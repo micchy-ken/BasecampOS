@@ -24,6 +24,7 @@ interface PackingVisualizerProps {
   onUpdateVehicleSeatMode: (mode: 'standard' | 'split' | 'flat') => void;
   onAddCustomVehicle: (newVehicle: Omit<Vehicle, 'id' | 'rearSeatMode'>) => void;
   onRemoveCustomVehicle: (id: string) => void;
+  onRestoreDefaultVehicles?: () => void;
   baggages: Baggage[];
   onAddBaggage: (baggage: Omit<Baggage, 'id'>) => void;
   onRemoveBaggage: (id: string) => void;
@@ -104,6 +105,7 @@ export default function PackingVisualizer({
   onUpdateVehicleSeatMode,
   onAddCustomVehicle,
   onRemoveCustomVehicle,
+  onRestoreDefaultVehicles,
   baggages,
   onAddBaggage,
   onRemoveBaggage,
@@ -1386,6 +1388,33 @@ export default function PackingVisualizer({
               ✏️
             </button>
             
+            {/* Split Seat Quick Move Button */}
+            {currentVehicle.rearSeatMode === 'split' && (
+              bag.parentId === 'rear_seat' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleUpdateBaggageParentWrap(bag.id, 'vehicle');
+                  }}
+                  className="w-7 h-7 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-black rounded flex items-center justify-center text-xs font-bold transition-all cursor-pointer animate-pulse"
+                  title="📦 トランク（荷室）へ簡単に移動"
+                >
+                  📦
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleUpdateBaggageParentWrap(bag.id, 'rear_seat');
+                  }}
+                  className="w-7 h-7 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-black rounded flex items-center justify-center text-xs font-bold transition-all cursor-pointer animate-pulse"
+                  title="🛋️ 後部座席へ簡単に移動"
+                >
+                  🛋️
+                </button>
+              )
+            )}
+
             {/* Unload/Remove from vehicle */}
             <button
               type="button"
@@ -1563,6 +1592,33 @@ export default function PackingVisualizer({
               ✏️
             </button>
             
+            {/* Split Seat Quick Move Button */}
+            {currentVehicle.rearSeatMode === 'split' && (
+              gear.parentId === 'rear_seat' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleUpdateGearParentWrap(gear.id, 'vehicle');
+                  }}
+                  className="w-7 h-7 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-black rounded flex items-center justify-center text-xs font-bold transition-all cursor-pointer animate-pulse"
+                  title="📦 トランク（荷室）へ簡単に移動"
+                >
+                  📦
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleUpdateGearParentWrap(gear.id, 'rear_seat');
+                  }}
+                  className="w-7 h-7 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-black rounded flex items-center justify-center text-xs font-bold transition-all cursor-pointer animate-pulse"
+                  title="🛋️ 後部座席へ簡単に移動"
+                >
+                  🛋️
+                </button>
+              )
+            )}
+
             {/* Unload/Remove from vehicle */}
             <button
               type="button"
@@ -1950,9 +2006,11 @@ export default function PackingVisualizer({
             <div className="flex flex-wrap items-center gap-2">
               {vehicles.map((v) => {
                 const isActive = (v.id === currentVehicle.id || v.type === currentVehicle.type);
+                const isCustom = v.id && v.id.startsWith('vehicle-custom-');
                 return (
                   <div key={v.id || v.type} className="relative inline-flex items-center">
                     <button
+                      type="button"
                       className={`px-3 py-1.5 border-2 border-black font-black text-xs uppercase tracking-tight transition-all cursor-pointer ${
                         isActive
                           ? 'bg-black text-white shadow-none translate-x-[2px] translate-y-[2px]'
@@ -1962,26 +2020,12 @@ export default function PackingVisualizer({
                     >
                       {v.name.split(' (')[0]}
                     </button>
-                    {/* Allow deleting custom vehicles */}
-                    {v.id && v.id.startsWith('vehicle-custom-') && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (confirm(`カスタム車両 「${v.name}」 を削除しますか？`)) {
-                            onRemoveCustomVehicle(v.id);
-                          }
-                        }}
-                        className="absolute -top-1.5 -right-1.5 bg-rose-650 hover:bg-red-700 text-white border border-black rounded-full w-4 h-4 text-[9px] font-black flex items-center justify-center cursor-pointer shadow-sm"
-                        title="車両を削除"
-                      >
-                        ×
-                      </button>
-                    )}
                   </div>
                 );
               })}
               
               <button
+                type="button"
                 onClick={() => setShowAddVehicle(!showAddVehicle)}
                 className={`px-3 py-1.5 border-2 border-dashed border-black font-bold text-xs uppercase tracking-tight transition-all cursor-pointer hover:bg-slate-50 ${
                   showAddVehicle ? 'bg-amber-100' : 'bg-white'
@@ -1989,6 +2033,22 @@ export default function PackingVisualizer({
               >
                 {showAddVehicle ? '閉じる' : '+ カスタム車両'}
               </button>
+
+              {(() => {
+                const isDefaultMissing = !vehicles.some(veh => veh.id === 'aqua' || veh.type === 'aqua') ||
+                                         !vehicles.some(veh => veh.id === 'suv' || veh.type === 'suv') ||
+                                         !vehicles.some(veh => veh.id === 'minivan' || veh.type === 'minivan');
+                return isDefaultMissing && onRestoreDefaultVehicles && (
+                  <button
+                    type="button"
+                    onClick={onRestoreDefaultVehicles}
+                    className="px-3 py-1.5 border-2 border-dashed border-indigo-600 text-indigo-700 hover:bg-indigo-50 font-extrabold text-xs uppercase tracking-tight transition-all cursor-pointer flex items-center gap-1 shadow-[2px_2px_0px_0px_rgba(79,70,229,0.2)]"
+                    title="削除された初期のプリセット車両をリストにすべて復元します"
+                  >
+                    🔄 プリセット復元
+                  </button>
+                );
+              })()}
             </div>
           </div>
 
@@ -2301,6 +2361,41 @@ export default function PackingVisualizer({
                       >
                         🪂 この荷物を上空から積み直す (Tetris)
                       </button>
+
+                      {/* Quick Compartment Move under Split Mode */}
+                      {currentVehicle.rearSeatMode === 'split' && (
+                        item.parentId === 'rear_seat' ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const isBaggage = item.id.startsWith('baggage-');
+                              if (isBaggage) {
+                                handleUpdateBaggageParentWrap(item.id, 'vehicle');
+                              } else {
+                                handleUpdateGearParentWrap(item.id, 'vehicle');
+                              }
+                            }}
+                            className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs py-2 px-3 rounded-none flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer border border-black shadow-[2px_2px_0px_#000]"
+                          >
+                            📦 トランク荷室へ移動
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const isBaggage = item.id.startsWith('baggage-');
+                              if (isBaggage) {
+                                handleUpdateBaggageParentWrap(item.id, 'rear_seat');
+                              } else {
+                                handleUpdateGearParentWrap(item.id, 'rear_seat');
+                              }
+                            }}
+                            className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs py-2 px-3 rounded-none flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer border border-black shadow-[2px_2px_0px_#000]"
+                          >
+                            🛋️ 後部座席エリアへ移動
+                          </button>
+                        )
+                      )}
 
                       {/* Direction Axis Adjustment */}
                       <div className="flex items-center gap-1.5 shrink-0 bg-zinc-900 border border-zinc-700 px-2">
@@ -2653,7 +2748,7 @@ export default function PackingVisualizer({
               </span>
             </div>
             <span className="text-slate-400">
-              ※ 各アイテムホバー時に移動微調整・3D回転方向などを指定できます。
+              ※ アイテムを選択し、アクションパネルの 📦 (トランクへ) 🛋️ (後席へ) ボタンをタップするだけで2室間を簡単に移動できます。
             </span>
           </div>
         </div>

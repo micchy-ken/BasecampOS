@@ -17,9 +17,22 @@ export interface GearItem {
   parentId: string;    // 'unassigned' | 'vehicle' | baggageId | storageContainerId
   shape?: GearShape;
   customPolygon?: string; // Optional CSS clip-path polygon like "10% 0%, 90% 0%, 100% 100%, 0% 100%"
-  notionPageId?: string;
   containerColor?: string; // HEX color for container (e.g. '#FF5C00')
   containerType?: string;  // type of container (soft_container, hard_container, bag, box, case, etc.)
+}
+
+export interface GearCandidate {
+  name: string;
+  brand: string;
+  category: string;
+  packedWidth: number;
+  packedDepth: number;
+  packedHeight: number;
+  expandedWidth: number;
+  expandedDepth: number;
+  expandedHeight: number;
+  weight: number;
+  description: string;
 }
 
 export type VehicleType = 'aqua' | 'suv' | 'minivan' | 'custom';

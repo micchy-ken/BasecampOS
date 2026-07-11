@@ -104,34 +104,50 @@ export async function lookupGearAI(queryName: string) {
   const responseSchema = {
     type: Type.OBJECT,
     properties: {
-      name: { type: Type.STRING },
-      brand: { type: Type.STRING },
-      category: { type: Type.STRING, description: "Category of the camping gear: 'Tent', 'Tarp', 'Chair', 'Table', 'Lantern', 'Cooking', 'Bedding', 'Other'" },
-      packedWidth: { type: Type.NUMBER, description: "Packed width in cm (approx, 1-200. e.g. 60)" },
-      packedDepth: { type: Type.NUMBER, description: "Packed depth in cm (approx, 1-200. e.g. 20)" },
-      packedHeight: { type: Type.NUMBER, description: "Packed height in cm (approx, 1-200. e.g. 20)" },
-      expandedWidth: { type: Type.NUMBER, description: "Expanded width in cm (approx, e.g. 270)" },
-      expandedDepth: { type: Type.NUMBER, description: "Expanded depth in cm (approx, e.g. 270)" },
-      expandedHeight: { type: Type.NUMBER, description: "Expanded height in cm (approx, e.g. 150)" },
-      weight: { type: Type.NUMBER, description: "Weight in kg (approx, e.g. 8.0)" },
-      description: { type: Type.STRING, description: "Short description in Japanese of products and features." }
+      candidates: {
+        type: Type.ARRAY,
+        description: "List of matching or highly relevant camping gears found. Return up to 4 discrete candidates if multiple distinct models, size variants, or similar competitor brands might match the query. If only 1 matches perfectly, return at least 1.",
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING, description: "Specific product/model name (e.g. アメニティドームM)" },
+            brand: { type: Type.STRING, description: "Brand or manufacturer (e.g. Snow Peak)" },
+            category: { type: Type.STRING, description: "Category of the camping gear: 'Tent', 'Tarp', 'Chair', 'Table', 'Lantern', 'Cooking', 'Bedding', 'Other'" },
+            packedWidth: { type: Type.NUMBER, description: "Packed width in cm (approx, 1-200)" },
+            packedDepth: { type: Type.NUMBER, description: "Packed depth in cm (approx, 1-200)" },
+            packedHeight: { type: Type.NUMBER, description: "Packed height in cm (approx, 1-200)" },
+            expandedWidth: { type: Type.NUMBER, description: "Expanded width in cm (approx)" },
+            expandedDepth: { type: Type.NUMBER, description: "Expanded depth in cm (approx)" },
+            expandedHeight: { type: Type.NUMBER, description: "Expanded height in cm (approx)" },
+            weight: { type: Type.NUMBER, description: "Weight in kg (approx)" },
+            description: { type: Type.STRING, description: "Short description in Japanese explaining details, size variations, or key features of this candidate." }
+          },
+          required: [
+            "name",
+            "brand",
+            "category",
+            "packedWidth",
+            "packedDepth",
+            "packedHeight",
+            "expandedWidth",
+            "expandedDepth",
+            "expandedHeight",
+            "weight",
+            "description"
+          ]
+        }
+      }
     },
-    required: [
-      "name",
-      "brand",
-      "category",
-      "packedWidth",
-      "packedDepth",
-      "packedHeight",
-      "expandedWidth",
-      "expandedDepth",
-      "expandedHeight",
-      "weight",
-      "description"
-    ]
+    required: ["candidates"]
   };
 
-  const prompt = `Please search for the exact or close specifications of the following camping gear in Japanese databases or general knowledge: "${queryName}". Set category to one of ['Tent', 'Tarp', 'Chair', 'Table', 'Lantern', 'Cooking', 'Bedding', 'Other']. Provide its packed (storage) dimensions, expanded (setup) dimensions, weight, and short features description in Japanese. If detailed sizes are not available online, return highly plausible and realistic estimates for this item type.`;
+  const prompt = `Please search for the specifications of camping gear matching or highly related to "${queryName}" in Japanese databases or general knowledge. 
+  If there are multiple candidates (e.g. different sizes, different colors with size differences, older vs newer versions, or similar popular competitor models from other brands), return up to 4 distinct candidates in the 'candidates' array. 
+  For each candidate, set category to one of ['Tent', 'Tarp', 'Chair', 'Table', 'Lantern', 'Cooking', 'Bedding', 'Other']. 
+  Provide its packed (storage) dimensions, expanded (setup) dimensions, weight, and a short, informative description in Japanese explaining who it is for or what exact model/size variation this represents, so the user can easily choose the right one.
+  If only one perfect match is found, still return it inside the 'candidates' array with 1 item.`;
+
+  let responseData: any = null;
 
   try {
     // 1st Attempt: with Google Search grounding - using stable 'gemini-flash-latest' for high availability
@@ -146,31 +162,47 @@ export async function lookupGearAI(queryName: string) {
 
     const text = response.text;
     if (text) {
-      return JSON.parse(text);
+      responseData = JSON.parse(text);
     }
   } catch (searchError: any) {
     console.warn("AI lookup with Google Search failed, retrying without Search...", searchError);
   }
 
-  // 2nd Attempt: fallback to pure generative lookup without googleSearch
-  try {
-    const responseFallback = await generateWithFallbackAndRetry(ai, {
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: responseSchema
-      }
-    }, "gemini-flash-latest");
+  if (!responseData) {
+    // 2nd Attempt: fallback to pure generative lookup without googleSearch
+    try {
+      const responseFallback = await generateWithFallbackAndRetry(ai, {
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: responseSchema
+        }
+      }, "gemini-flash-latest");
 
-    const textFallback = responseFallback.text;
-    if (!textFallback) {
-      throw new Error('AIから応答がありませんでした');
+      const textFallback = responseFallback.text;
+      if (!textFallback) {
+        throw new Error('AIから応答がありませんでした');
+      }
+      responseData = JSON.parse(textFallback);
+    } catch (err: any) {
+      console.error("AI lookup failed completely:", err);
+      throw new Error(`AIスペック取得エラー: ${err.message || err}`);
     }
-    return JSON.parse(textFallback);
-  } catch (err: any) {
-    console.error("AI lookup failed completely:", err);
-    throw new Error(`AIスペック取得エラー: ${err.message || err}`);
   }
+
+  // Normalize response to ensure it always returns an array of candidates
+  if (responseData) {
+    if (responseData.candidates && Array.isArray(responseData.candidates)) {
+      return responseData.candidates;
+    } else if (responseData.name) {
+      // Compatibility fallback
+      return [responseData];
+    } else if (Array.isArray(responseData)) {
+      return responseData;
+    }
+  }
+  
+  return [];
 }
 
 export async function fetchWebShapeAI(name: string, category: string) {

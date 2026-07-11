@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GearItem, GearCategory, GearShape } from '../types';
+import { GearItem, GearCategory, GearShape, GearCandidate } from '../types';
 import { 
   Sparkles, 
   Loader2, 
@@ -44,6 +44,9 @@ export default function GearForm({ onAddGear, onAddMultipleGears, onSyncGears, o
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [fallbackActive, setFallbackActive] = useState(false);
+  const [candidates, setCandidates] = useState<GearCandidate[]>([]);
+  const [showCandidates, setShowCandidates] = useState(false);
+  const [searchSuccessMsg, setSearchSuccessMsg] = useState<string | null>(null);
 
   // AI Spec Image States
   const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
@@ -156,35 +159,49 @@ export default function GearForm({ onAddGear, onAddMultipleGears, onSyncGears, o
     setFallbackActive(true);
   };
 
+  const applyCandidate = (data: GearCandidate) => {
+    setName(data.name || lookupQuery);
+    setBrand(data.brand || '');
+    if (data.category && CATEGORIES.some(c => c.value === data.category)) {
+      setCategory(data.category as GearCategory);
+    } else {
+      setCategory('Other');
+    }
+    setPackedWidth(data.packedWidth || 40);
+    setPackedDepth(data.packedDepth || 20);
+    setPackedHeight(data.packedHeight || 20);
+    setExpandedWidth(data.expandedWidth || 200);
+    setExpandedDepth(data.expandedDepth || 200);
+    setExpandedHeight(data.expandedHeight || 100);
+    setWeight(data.weight || 2.0);
+    setDescription(data.description || '');
+  };
+
   const handleAILookup = async () => {
     if (!lookupQuery.trim()) return;
     setIsSearching(true);
     setSearchError(null);
+    setSearchSuccessMsg(null);
     setFallbackActive(false);
     setSubmitSuccess(false);
+    setCandidates([]);
+    setShowCandidates(false);
 
     try {
       const { lookupGearAI } = await import('../lib/ai');
       const data = await lookupGearAI(lookupQuery);
       
-      setName(data.name || lookupQuery);
-      setBrand(data.brand || '');
-      if (data.category && CATEGORIES.some(c => c.value === data.category)) {
-        setCategory(data.category as GearCategory);
+      if (data && data.length > 0) {
+        if (data.length === 1) {
+          applyCandidate(data[0]);
+          setSearchSuccessMsg('AIによるスペックの自動補完に成功しました！');
+        } else {
+          setCandidates(data);
+          setShowCandidates(true);
+          setSearchSuccessMsg(`複数の候補が見つかりました（${data.length}件）。最適なスペックを選択してください。`);
+        }
       } else {
-        setCategory('Other');
-      }
-      setPackedWidth(data.packedWidth || 40);
-      setPackedDepth(data.packedDepth || 20);
-      setPackedHeight(data.packedHeight || 20);
-      setExpandedWidth(data.expandedWidth || 200);
-      setExpandedDepth(data.expandedDepth || 200);
-      setExpandedHeight(data.expandedHeight || 100);
-      setWeight(data.weight || 2.0);
-      setDescription(data.description || '');
-
-      if (data.isHeuristic) {
-        setFallbackActive(true);
+        throw new Error('スペックデータが見つかりませんでした。');
       }
     } catch (err: any) {
       console.warn("API lookup failed. Triggering offline automatic heuristic estimation.", err);
@@ -541,8 +558,8 @@ DOD ワンポールテントS,DOD,Tent,55,20,20,250,220,170,3.2,初心者でも�
             <Plus className="w-5.5 h-5.5 text-[#FF5C00]" />
             キャンプギアの一括 & 新規登録
           </h3>
-          <p className="text-xs text-slate-500">
-            お持ちのアウトドアギアを登録。手動指定のほか、CSVファイルドロップやNotionのテーブルからの直接インポートに対応。
+          <p className="text-xs text-slate-505">
+            お持ちのアウトドアギアを登録。手動指定のほか、CSVファイルドロップによる一括インポートに対応。
           </p>
         </div>
       </div>
@@ -619,12 +636,84 @@ DOD ワンポールテントS,DOD,Tent,55,20,20,250,220,170,3.2,初心者でも�
               </div>
             )}
 
+            {searchSuccessMsg && (
+              <div className="mt-3 flex items-start gap-1.5 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 p-2.5 rounded-lg font-semibold animate-fade-in">
+                <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <span>{searchSuccessMsg}</span>
+              </div>
+            )}
+
             {fallbackActive && (
               <div className="mt-3 flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 p-2.5 rounded-lg">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
                 <span>
                   <strong>簡易サイズ推定機能オン:</strong> AIモデル制限中のため、商品のカテゴリ名からサイズを仮計算しました。サイズは手動で自由に変更できます。
                 </span>
+              </div>
+            )}
+
+            {showCandidates && candidates.length > 0 && (
+              <div className="mt-4 space-y-3 animate-fade-in border-t border-[#FF5C00]/20 pt-3">
+                <div className="text-[11px] font-black uppercase text-slate-500 tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-[#FF5C00]" />
+                  候補からスペックを選択：
+                </div>
+                <div className="grid grid-cols-1 gap-3 max-h-[300px] overflow-y-auto pr-1">
+                  {candidates.map((c, idx) => (
+                    <div 
+                      key={idx} 
+                      className="p-3 bg-white hover:bg-slate-50 border-2 border-black rounded-xl shadow-[2px_2px_0px_rgba(0,0,0,1)] hover:shadow-[1px_1px_0px_rgba(0,0,0,1)] hover:translate-x-[1px] hover:translate-y-[1px] transition-all flex flex-col justify-between gap-2.5"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {c.brand && (
+                              <span className="text-[9px] font-black text-white uppercase tracking-wide bg-black px-1.5 py-0.5 rounded">
+                                {c.brand}
+                              </span>
+                            )}
+                            <h5 className="font-extrabold text-xs text-slate-900">
+                              {c.name}
+                            </h5>
+                          </div>
+                          <span className="text-[9px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-black border border-slate-200 shrink-0">
+                            {c.category}
+                          </span>
+                        </div>
+                        {c.description && (
+                          <p className="text-[10px] text-slate-500 mt-2 leading-relaxed bg-slate-50 p-2 rounded border border-slate-100">
+                            {c.description}
+                          </p>
+                        )}
+                        <div className="mt-2.5 grid grid-cols-3 gap-1 bg-zinc-50 border border-zinc-100 p-2 rounded-lg font-mono text-[10px] text-slate-600">
+                          <div>
+                            <span className="font-sans block text-[8px] text-slate-400 uppercase font-black">収納サイズ</span>
+                            <span className="font-bold text-slate-700">{c.packedWidth}x{c.packedDepth}x{c.packedHeight} cm</span>
+                          </div>
+                          <div>
+                            <span className="font-sans block text-[8px] text-slate-400 uppercase font-black">展開サイズ</span>
+                            <span className="font-bold text-slate-700">{c.expandedWidth}x{c.expandedDepth}x{c.expandedHeight} cm</span>
+                          </div>
+                          <div>
+                            <span className="font-sans block text-[8px] text-slate-400 uppercase font-black">重量</span>
+                            <span className="font-bold text-slate-700">{c.weight} kg</span>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          applyCandidate(c);
+                          setSearchSuccessMsg(`「${c.brand ? c.brand + ' ' : ''}${c.name}」のスペックを適用しました。フォーム内の各項目を確認・保存してください。`);
+                          setShowCandidates(false);
+                        }}
+                        className="w-full py-1.5 px-3 bg-[#FF5C00] hover:bg-[#ff7224] text-black font-extrabold text-xs rounded-lg transition-all shadow-[2px_2px_0px_rgba(0,0,0,1)] border-2 border-black cursor-pointer text-center"
+                      >
+                        このスペックをフォームに適用
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -1073,7 +1162,7 @@ DOD ワンポールテントS,DOD,Tent,55,20,20,250,220,170,3.2,初心者でも�
                 <FileText className="w-3.5 h-3.5 text-[#FF5C00]" />
                 お手元の機材目録スプレッドシート（CSV）から全ギア登録
               </p>
-              <p>エクセルやGoogleスプレッドシート、NotionのCSVエクスポートに対応。カラム名は日本語と英語の両方を自動解釈します。</p>
+              <p>エクセルやGoogleスプレッドシートなどのCSVエクスポートに対応。カラム名は日本語と英語の両方を自動解釈します。</p>
             </div>
             
             <button

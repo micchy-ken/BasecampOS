@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GearItem, GearCategory, GearShape, Baggage, StorageContainer } from '../types';
+import { GearItem, GearCategory, GearShape, Baggage, StorageContainer, GearCandidate } from '../types';
 import { 
   Sparkles, 
   Loader2, 
@@ -51,7 +51,6 @@ export default function GearEditModal({
   const [shape, setShape] = useState<GearShape>('rectangle');
   const [customPolygon, setCustomPolygon] = useState('20% 0%, 80% 0%, 100% 100%, 0% 100%');
   const [parentId, setParentId] = useState('unassigned');
-  const [notionPageId, setNotionPageId] = useState('');
   const [containerColor, setContainerColor] = useState('#FF5C00');
   const [containerType, setContainerType] = useState('soft_container');
 
@@ -63,14 +62,11 @@ export default function GearEditModal({
   const [expandedHeight, setExpandedHeight] = useState(0);
   const [description, setDescription] = useState('');
 
-  // Notion Credentials
-  const [notionToken, setNotionToken] = useState('');
-  const [notionDatabaseId, setNotionDatabaseId] = useState('');
-
   const [isAILookingUp, setIsAILookingUp] = useState(false);
+  const [candidates, setCandidates] = useState<GearCandidate[]>([]);
+  const [showCandidates, setShowCandidates] = useState(false);
   const [isFetchingWebShape, setIsFetchingWebShape] = useState(false);
   const [webShapeError, setWebShapeError] = useState<string | null>(null);
-  const [isNotionSyncing, setIsNotionSyncing] = useState(false);
   const [editorMsg, setEditorMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   // Initialize fields
@@ -83,7 +79,6 @@ export default function GearEditModal({
       setShape(gear.shape || 'rectangle');
       setCustomPolygon(gear.customPolygon || '20% 0%, 80% 0%, 100% 100%, 0% 100%');
       setParentId(gear.parentId || 'unassigned');
-      setNotionPageId(gear.notionPageId || '');
       setContainerColor(gear.containerColor || '#FF5C00');
       setContainerType(gear.containerType || 'soft_container');
 
@@ -97,11 +92,24 @@ export default function GearEditModal({
 
       setWebShapeError(null);
       setEditorMsg(null);
-
-      setNotionToken(localStorage.getItem('basecamp_os_notion_token') || '');
-      setNotionDatabaseId(localStorage.getItem('basecamp_os_notion_db_id') || '');
     }
   }, [gear]);
+
+  const applyCandidate = (data: GearCandidate) => {
+    setName(data.name || name);
+    setBrand(data.brand || brand);
+    if (data.category && CATEGORIES.some(c => c.value === data.category)) {
+      setCategory(data.category as GearCategory);
+    }
+    setPackedWidth(data.packedWidth || 40);
+    setPackedDepth(data.packedDepth || 20);
+    setPackedHeight(data.packedHeight || 20);
+    setExpandedWidth(data.expandedWidth || 200);
+    setExpandedDepth(data.expandedDepth || 200);
+    setExpandedHeight(data.expandedHeight || 100);
+    setWeight(data.weight || 2.0);
+    setDescription(data.description || '');
+  };
 
   // Text-based AI details lookup
   const handleAILookup = async () => {
@@ -111,25 +119,26 @@ export default function GearEditModal({
     }
     setIsAILookingUp(true);
     setEditorMsg(null);
+    setCandidates([]);
+    setShowCandidates(false);
 
     try {
       const queryName = brand ? `${brand} ${name}` : name;
       const { lookupGearAI } = await import('../lib/ai');
       const data = await lookupGearAI(queryName);
       
-      setName(data.name || name);
-      setBrand(data.brand || brand);
-      if (data.category) setCategory(data.category as GearCategory);
-      setPackedWidth(data.packedWidth || 40);
-      setPackedDepth(data.packedDepth || 20);
-      setPackedHeight(data.packedHeight || 20);
-      setExpandedWidth(data.expandedWidth || 200);
-      setExpandedDepth(data.expandedDepth || 200);
-      setExpandedHeight(data.expandedHeight || 100);
-      setWeight(data.weight || 2.0);
-      setDescription(data.description || '');
-
-      setEditorMsg({ type: 'success', text: 'AIによるスペックの自動補完に成功しました！' });
+      if (data && data.length > 0) {
+        if (data.length === 1) {
+          applyCandidate(data[0]);
+          setEditorMsg({ type: 'success', text: 'AIによるスペックの自動補完に成功しました！' });
+        } else {
+          setCandidates(data);
+          setShowCandidates(true);
+          setEditorMsg({ type: 'success', text: `複数の候補が見つかりました（${data.length}件）。最適なスペックを選択してください。` });
+        }
+      } else {
+        throw new Error('スペックデータが見つかりませんでした。');
+      }
     } catch (err: any) {
       setEditorMsg({ type: 'error', text: err.message || '自動取得に失敗しました。オフライン制限中、または型番が見つかりません。' });
     } finally {
@@ -165,64 +174,6 @@ export default function GearEditModal({
     }
   };
 
-
-  // Notion Database integration syncing
-  const handleNotionSync = async () => {
-    const token = notionToken.trim();
-    const dbId = notionDatabaseId.trim();
-
-    if (!token || !dbId) {
-      setEditorMsg({ type: 'error', text: 'Notion データベース連携キー、またはDB IDが設定されていません。' });
-      return;
-    }
-
-    setIsNotionSyncing(true);
-    setEditorMsg(null);
-
-    try {
-      const response = await fetch('/api/notion-update', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          notionToken: token,
-          databaseId: dbId,
-          notionPageId: notionPageId || undefined,
-          gear: {
-            name: name.trim(),
-            brand: brand.trim(),
-            category: category,
-            packedWidth: Number(packedWidth) || 0,
-            packedDepth: Number(packedDepth) || 0,
-            packedHeight: Number(packedHeight) || 0,
-            expandedWidth: Number(expandedWidth) || 0,
-            expandedDepth: Number(expandedDepth) || 0,
-            expandedHeight: Number(expandedHeight) || 0,
-            weight: Number(weight) || 0,
-            description: description.trim(),
-            packingLocation: getStorageName(parentId)
-          }
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Notionデータベースへの書き戻しに失敗しました。');
-      }
-
-      if (data.notionPageId) {
-        setNotionPageId(data.notionPageId);
-        setEditorMsg({ type: 'success', text: 'Notion データベースとの双方向同期が完了しました！' });
-      }
-    } catch (err: any) {
-      console.error(err);
-      setEditorMsg({ type: 'error', text: err.message || 'Notion同期失敗。接続設定をご確認ください。' });
-    } finally {
-      setIsNotionSyncing(false);
-    }
-  };
-
   // Submit edits
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -242,7 +193,6 @@ export default function GearEditModal({
       weight: Number(weight) || 0,
       description: description.trim(),
       parentId: parentId,
-      notionPageId: notionPageId || undefined,
       containerColor: (category === 'Baggage' || category === 'Storage') ? containerColor : undefined,
       containerType: (category === 'Baggage' || category === 'Storage') ? containerType : undefined
     };
@@ -317,6 +267,71 @@ export default function GearEditModal({
               />
             </div>
           </div>
+
+          {showCandidates && candidates.length > 0 && (
+            <div className="bg-indigo-50/50 p-3 rounded-xl border-2 border-indigo-200 space-y-3 animate-fade-in my-2">
+              <div className="text-[10px] font-black uppercase text-indigo-700 tracking-wider flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
+                AIが検出したスペック候補（選択すると適用されます）：
+              </div>
+              <div className="grid grid-cols-1 gap-2.5 max-h-[220px] overflow-y-auto pr-1">
+                {candidates.map((c, idx) => (
+                  <div 
+                    key={idx} 
+                    className="p-2.5 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg transition-all flex flex-col justify-between gap-2 shadow-sm"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-1">
+                          {c.brand && (
+                            <span className="text-[8px] font-black text-white uppercase bg-indigo-600 px-1 py-0.5 rounded">
+                              {c.brand}
+                            </span>
+                          )}
+                          <h5 className="font-extrabold text-[11px] text-slate-900">
+                            {c.name}
+                          </h5>
+                        </div>
+                        <span className="text-[8px] bg-slate-100 text-slate-600 px-1 py-0.5 rounded font-bold border border-slate-200 shrink-0">
+                          {c.category}
+                        </span>
+                      </div>
+                      {c.description && (
+                        <p className="text-[9px] text-slate-500 mt-1 leading-relaxed bg-slate-50 p-1.5 rounded border border-slate-100 italic">
+                          {c.description}
+                        </p>
+                      )}
+                      <div className="mt-2 grid grid-cols-3 gap-1 bg-indigo-50/20 border border-slate-100 p-1.5 rounded-md font-mono text-[9px] text-slate-600">
+                        <div>
+                          <span className="font-sans block text-[7px] text-slate-400 uppercase font-black">収納サイズ</span>
+                          <span className="font-bold text-slate-700">{c.packedWidth}x{c.packedDepth}x{c.packedHeight} cm</span>
+                        </div>
+                        <div>
+                          <span className="font-sans block text-[7px] text-slate-400 uppercase font-black">展開サイズ</span>
+                          <span className="font-bold text-slate-700">{c.expandedWidth}x{c.expandedDepth}x{c.expandedHeight} cm</span>
+                        </div>
+                        <div>
+                          <span className="font-sans block text-[7px] text-slate-400 uppercase font-black">重量</span>
+                          <span className="font-bold text-slate-700">{c.weight} kg</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        applyCandidate(c);
+                        setEditorMsg({ type: 'success', text: `「${c.brand ? c.brand + ' ' : ''}${c.name}」のスペックを適用しました！` });
+                        setShowCandidates(false);
+                      }}
+                      className="w-full py-1 px-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] rounded transition-all cursor-pointer text-center"
+                    >
+                      この候補のスペックを適用する
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {/* Category */}
@@ -587,81 +602,22 @@ export default function GearEditModal({
             />
           </div>
 
-          {/* Notion Credentials Quick Input */}
-          {(!notionToken || !notionDatabaseId) && (
-            <div className="p-3 bg-amber-50/70 border border-amber-200/85 rounded-xl space-y-2">
-              <div className="flex items-center gap-1 text-amber-900 text-[10px] font-black uppercase tracking-wider">
-                <ShieldAlert className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                Notion データベース接続設定 (未設定)
-              </div>
-              <p className="text-[10px] text-slate-505 leading-normal">
-                Notion データベースとの同期・書き戻しを行うには、下の接続トークンとDB IDを入力してください。
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <input 
-                    type="password" 
-                    value={notionToken} 
-                    onChange={(e) => {
-                      setNotionToken(e.target.value);
-                      localStorage.setItem('basecamp_os_notion_token', e.target.value);
-                    }}
-                    className="w-full text-[10px] bg-white border border-slate-300 rounded p-1.5 font-mono focus:outline-none"
-                    placeholder="トークン (secret_...)"
-                  />
-                </div>
-                <div>
-                  <input 
-                    type="text" 
-                    value={notionDatabaseId} 
-                    onChange={(e) => {
-                      setNotionDatabaseId(e.target.value);
-                      localStorage.setItem('basecamp_os_notion_db_id', e.target.value);
-                    }}
-                    className="w-full text-[10px] bg-white border border-slate-300 rounded p-1.5 font-mono focus:outline-none"
-                    placeholder="データベース ID (32文字)"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Control actions */}
-          <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between pt-3 border-t bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-            <div className="flex flex-wrap gap-2">
-              {/* Notion Sync button */}
-              <button
-                type="button"
-                onClick={handleNotionSync}
-                disabled={isNotionSyncing}
-                className="bg-slate-900 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs py-2 px-3 rounded-lg cursor-pointer flex items-center gap-1.5 shadow-xs transition-colors border-0 shrink-0"
-                title={notionPageId ? "Notion側の既存行を更新します" : "Notionデータベースへ新規追加して連携します"}
-              >
-                {isNotionSyncing ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-                ) : (
-                  <Database className="w-3.5 h-3.5 text-white" />
-                )}
-                <span>📓 {notionPageId ? 'Notionへ同期更新' : 'Notionへ新規登録'}</span>
-              </button>
-            </div>
-
-            <div className="flex gap-2 justify-end">
-              <button 
-                type="button" 
-                onClick={onClose}
-                className="px-3 py-2 text-xs font-bold text-slate-600 hover:text-black hover:bg-slate-200 rounded-lg transition-colors border border-slate-300 cursor-pointer"
-              >
-                キャンセル
-              </button>
-              <button 
-                type="submit" 
-                className="px-4 py-2 text-xs font-black bg-[#FF5C00] text-black hover:bg-[#ff7224] rounded-lg flex items-center gap-1.5 transition-all shadow-[2px_2px_0px_rgba(0,0,0,1)] border-2 border-black cursor-pointer"
-              >
-                <Check className="w-3.5 h-3.5 text-black animate-pulse" />
-                変更を反映して保存
-              </button>
-            </div>
+          <div className="flex justify-end gap-2 pt-3 border-t bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+            <button 
+              type="button" 
+              onClick={onClose}
+              className="px-3 py-2 text-xs font-bold text-slate-600 hover:text-black hover:bg-slate-200 rounded-lg transition-colors border border-slate-300 cursor-pointer"
+            >
+              キャンセル
+            </button>
+            <button 
+              type="submit" 
+              className="px-4 py-2 text-xs font-black bg-[#FF5C00] text-black hover:bg-[#ff7224] rounded-lg flex items-center gap-1.5 transition-all shadow-[2px_2px_0px_rgba(0,0,0,1)] border-2 border-black cursor-pointer"
+            >
+              <Check className="w-3.5 h-3.5 text-black animate-pulse" />
+              変更を反映して保存
+            </button>
           </div>
         </form>
       </div>

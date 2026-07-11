@@ -158,10 +158,10 @@ export default function GearList({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-200 pb-4 mb-5">
         <div>
           <h3 className="text-sm font-black uppercase tracking-tight flex items-center gap-1.5 text-black">
-            📋 登録済みギア一覧・データベース連携
+            📋 登録済みギア一覧・スペック管理
           </h3>
           <p className="text-[10px] text-slate-500 mt-1">
-            登録されたギアの検索、CSV出力、および個々のスペックの修正、Notionとの双方向同期が可能です。
+            登録されたギアの検索、CSV出力、および個々のスペックや2D形状のカスタマイズが可能です。
           </p>
         </div>
 
@@ -368,11 +368,6 @@ export default function GearList({
                            g.shape === 'custom' ? '📐 カスタム' : '⬛ 四角'}
                         </span>
                       )}
-                      {g.notionPageId && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-slate-950 text-white uppercase tracking-wider">
-                          📓 Notion
-                        </span>
-                      )}
                     </div>
                     
                     <div className="flex items-center gap-1 shrink-0">
@@ -389,7 +384,7 @@ export default function GearList({
                       <button
                         onClick={() => startEditing(g)}
                         className="text-slate-400 hover:text-indigo-650 transition-colors p-1.5 rounded-md hover:bg-slate-50 cursor-pointer"
-                        title="スペック・形状の統合編集 & Notion連携"
+                        title="スペック・形状の統合編集"
                       >
                         <Edit className="w-3.5 h-3.5" />
                       </button>
@@ -524,11 +519,6 @@ export default function GearList({
                            g.shape === 'custom' ? '📐 カスタム' : '⬛ 四角'}
                         </span>
                       )}
-                      {g.notionPageId && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[8px] font-black bg-slate-950 text-white uppercase tracking-wider">
-                          📓 Notion
-                        </span>
-                      )}
                     </div>
 
                     {/* Size Column */}
@@ -565,7 +555,7 @@ export default function GearList({
                       <button
                         onClick={() => startEditing(g)}
                         className="text-slate-450 hover:text-indigo-650 transition-colors p-1.5 rounded-md hover:bg-slate-105 cursor-pointer"
-                        title="スペック・形状の統合編集 & Notion連携"
+                        title="スペック・形状の統合編集"
                       >
                         <Edit className="w-3.5 h-3.5" />
                       </button>
