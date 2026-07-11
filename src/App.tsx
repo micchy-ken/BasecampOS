@@ -225,7 +225,10 @@ const DEFAULT_VEHICLES: Vehicle[] = [
     depth: 70,
     height: 65,
     maxWeight: 120,
-    rearSeatMode: 'standard'
+    rearSeatMode: 'standard',
+    rearFoldedWidth: 95,
+    rearFoldedDepth: 163,
+    rearFoldedHeight: 65
   },
   {
     id: 'suv',
@@ -235,7 +238,10 @@ const DEFAULT_VEHICLES: Vehicle[] = [
     depth: 95,
     height: 80,
     maxWeight: 220,
-    rearSeatMode: 'standard'
+    rearSeatMode: 'standard',
+    rearFoldedWidth: 110,
+    rearFoldedDepth: 170,
+    rearFoldedHeight: 80
   },
   {
     id: 'minivan',
@@ -245,7 +251,10 @@ const DEFAULT_VEHICLES: Vehicle[] = [
     depth: 115,
     height: 95,
     maxWeight: 380,
-    rearSeatMode: 'standard'
+    rearSeatMode: 'standard',
+    rearFoldedWidth: 135,
+    rearFoldedDepth: 190,
+    rearFoldedHeight: 95
   }
 ];
 

@@ -145,9 +145,9 @@ export default function MyPage({
       height: Number(vehHeight) || 80,
       maxWeight: Number(vehMaxWeight) || 200,
       rearSeatMode: rearSeatMode,
-      rearFoldedWidth: Number(rearW) || Number(vehWidth),
+      rearFoldedWidth: Number(vehWidth),
       rearFoldedDepth: Number(rearD) || (Number(vehDepth) + 75),
-      rearFoldedHeight: Number(rearH) || Number(vehHeight),
+      rearFoldedHeight: Number(vehHeight),
       subCompartmentsQuantity: Number(compartments) || 1
     };
 
@@ -317,11 +317,14 @@ export default function MyPage({
                     )}
                   </div>
 
-                  <span className="text-[10px] font-mono mt-2 opacity-85 block">
-                    通常: {v.width}×{v.depth}×{v.height}cm
+                   <span className="text-[10px] font-mono mt-2 opacity-85 block">
+                    トランク: {v.width}×{v.depth}×{v.height}cm
                   </span>
-                  <span className="text-[9px] font-mono opacity-85">
-                    後部席倒し時: Depth {v.rearFoldedDepth || (v.depth + 75)} cm
+                  <span className="text-[9px] font-mono opacity-85 block">
+                    フルフラット時の奥行: {v.rearFoldedDepth || (v.depth + 75)} cm
+                  </span>
+                  <span className="text-[9px] font-mono opacity-85 block font-bold text-indigo-200">
+                    後部座席奥行: {Math.max(0, (v.rearFoldedDepth || (v.depth + 75)) - v.depth - 10)} cm
                   </span>
                 </div>
               );
@@ -385,18 +388,18 @@ export default function MyPage({
 
             {/* Standard Trunk cargo Dimensions and Limit */}
             <div className="p-3.5 bg-slate-50 border border-black rounded-lg space-y-2.5">
-              <span className="block text-[10px] font-black text-slate-800 uppercase">🚘 荷室トランク(標準時) 奥行x幅x高さ(cm) & 積載耐荷重</span>
+              <span className="block text-[10px] font-black text-slate-800 uppercase">📦 トランクのサイズ & 積載耐荷重</span>
               <div className="grid grid-cols-4 gap-2">
                 <div>
-                  <span className="block text-[9px] text-slate-400">幅 (Width)</span>
+                  <span className="block text-[9px] text-slate-400">幅 (Width) cm</span>
                   <input type="number" className="w-full bg-white border rounded p-1.5 text-center font-mono font-bold" value={vehWidth} onChange={(e) => setVehWidth(parseInt(e.target.value) || 0)} />
                 </div>
                 <div>
-                  <span className="block text-[9px] text-slate-400">奥行 (Depth)</span>
+                  <span className="block text-[9px] text-slate-400">奥行 (Trunk Depth) cm</span>
                   <input type="number" className="w-full bg-white border rounded p-1.5 text-center font-mono font-bold" value={vehDepth} onChange={(e) => setVehDepth(parseInt(e.target.value) || 0)} />
                 </div>
                 <div>
-                  <span className="block text-[9px] text-slate-400">高さ (Height)</span>
+                  <span className="block text-[9px] text-slate-400">高さ (Height) cm</span>
                   <input type="number" className="w-full bg-white border rounded p-1.5 text-center font-mono font-bold" value={vehHeight} onChange={(e) => setVehHeight(parseInt(e.target.value) || 0)} />
                 </div>
                 <div>
@@ -408,19 +411,30 @@ export default function MyPage({
 
             {/* Rear folded seat dimensions */}
             <div className="p-3.5 bg-indigo-50/40 border border-indigo-200 rounded-lg space-y-2.5">
-              <span className="block text-[10px] font-black text-indigo-900 uppercase">🪑 後部座席を荷室とした広さ 拡張 (Rear Seat Folded Cargo Space)</span>
-              <div className="grid grid-cols-3 gap-2">
+              <span className="block text-[10px] font-black text-indigo-900 uppercase">🛌 フルフラット時の奥行設定 & 後部座席の自動サイズ算出</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <span className="block text-[9px] text-slate-450 font-bold">後部座席折畳み時 幅</span>
-                  <input type="number" className="w-full bg-white border border-indigo-250 rounded p-1.5 text-center font-mono font-bold" value={rearW} onChange={(e) => setRearW(parseInt(e.target.value) || 0)} />
+                  <span className="block text-[9px] text-slate-450 font-bold">フルフラット時の最大奥行 (Total Depth) cm</span>
+                  <input 
+                    type="number" 
+                    className="w-full bg-white border border-indigo-250 rounded p-1.5 font-mono font-bold text-indigo-700 focus:ring-1 focus:ring-indigo-500 text-center" 
+                    value={rearD} 
+                    onChange={(e) => setRearD(parseInt(e.target.value) || 0)} 
+                    placeholder="例: 163"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-1 block">
+                    ※トランクから前席後ろまでの合計奥行を入力
+                  </span>
                 </div>
-                <div>
-                  <span className="block text-[9px] text-slate-450 font-bold">後部座席折畳み時 奥行(合計)</span>
-                  <input type="number" className="w-full bg-white border border-indigo-250 rounded p-1.5 text-center font-mono font-bold" value={rearD} onChange={(e) => setRearD(parseInt(e.target.value) || 0)} />
-                </div>
-                <div>
-                  <span className="block text-[9px] text-slate-450 font-bold">後部座席折畳み時 高さ</span>
-                  <input type="number" className="w-full bg-white border border-indigo-250 rounded p-1.5 text-center font-mono font-bold" value={rearH} onChange={(e) => setRearH(parseInt(e.target.value) || 0)} />
+                <div className="bg-white/80 p-2.5 rounded border border-indigo-100 flex flex-col justify-center">
+                  <span className="block text-[10px] font-bold text-indigo-900">💺 後部座席の算出サイズ:</span>
+                  <div className="text-[11px] text-slate-700 font-mono mt-1">
+                    <div>フルフラット ({rearD}cm)</div>
+                    <div>− トランク ({vehDepth}cm) − 10cm</div>
+                    <div className="font-extrabold text-indigo-600 mt-0.5 border-t pt-0.5">
+                      ＝ {Math.max(0, Number(rearD) - Number(vehDepth) - 10)} cm
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

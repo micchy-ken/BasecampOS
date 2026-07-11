@@ -615,11 +615,11 @@ export default function PackingVisualizer({
       
       if (currentVehicle.rearSeatMode === 'split') {
         const trunkDepth = currentVehicle.depth;
-        const rearSeatDepth = Math.max(0, activeDepth - trunkDepth);
+        const rearSeatDepth = Math.max(0, activeDepth - trunkDepth - 10);
         if (item.parentId === 'rear_seat') {
           itemY_cm = (item.yPercent / 100.0) * rearSeatDepth + item.depth / 2;
         } else {
-          itemY_cm = rearSeatDepth + (item.yPercent / 100.0) * trunkDepth + item.depth / 2;
+          itemY_cm = (rearSeatDepth + 10) + (item.yPercent / 100.0) * trunkDepth + item.depth / 2;
         }
       }
 
@@ -886,9 +886,9 @@ export default function PackingVisualizer({
     });
 
     // B2. Intermediate partition wall representing backrest of rear seats under 'split' mode
-    const extraDepthForBackrest = activeDepth - currentVehicle.depth;
-    if (currentVehicle.rearSeatMode === 'split' && extraDepthForBackrest > 0) {
-      const midY = -hd + extraDepthForBackrest;
+    const rearSeatDepthForBackrest = Math.max(0, activeDepth - currentVehicle.depth - 10);
+    if (currentVehicle.rearSeatMode === 'split' && activeDepth > currentVehicle.depth) {
+      const midY = -hd + rearSeatDepthForBackrest + 5; // Center of the 10cm backrest zone
       
       renderQueue.push({
         depth: project(0, midY, 0).depth + 50, // depth-sorting coordinate
@@ -898,10 +898,10 @@ export default function PackingVisualizer({
           const p2 = project(hw, midY, hh);
           const p3 = project(-hw, midY, hh);
 
-          // Draw the partition wall in a distinct style (translucent indigo screen)
-          ctx.fillStyle = 'rgba(79, 70, 229, 0.18)';
+          // Draw the partition wall in a distinct style (translucent indigo screen representing 10cm thickness)
+          ctx.fillStyle = 'rgba(79, 70, 229, 0.22)';
           ctx.strokeStyle = '#4F46E5';
-          ctx.lineWidth = 2.5;
+          ctx.lineWidth = 4.0; // thicker for 10cm feel
 
           ctx.beginPath();
           ctx.moveTo(p0.x, p0.y);
@@ -920,8 +920,8 @@ export default function PackingVisualizer({
           
           ctx.strokeStyle = '#FFFFFF';
           ctx.lineWidth = 3.0;
-          ctx.strokeText('💺 後部座席背もたれ (Rear Seat Backrest)', (p0.x + p1.x)/2, (p0.y + p3.y)/2);
-          ctx.fillText('💺 後部座席背もたれ (Rear Seat Backrest)', (p0.x + p1.x)/2, (p0.y + p3.y)/2);
+          ctx.strokeText('💺 後部座席背もたれ (厚み10cm)', (p0.x + p1.x)/2, (p0.y + p3.y)/2);
+          ctx.fillText('💺 後部座席背もたれ (厚み10cm)', (p0.x + p1.x)/2, (p0.y + p3.y)/2);
         }
       });
     }
@@ -2175,10 +2175,10 @@ export default function PackingVisualizer({
             </div>
             <div>
               <span className="block text-[9px] font-bold text-slate-500 uppercase">
-                荷室奥行 (Depth) {currentVehicle.rearSeatMode !== 'standard' && <span className="text-indigo-600 font-extrabold animate-pulse">(拡張済)</span>}
+                {currentVehicle.rearSeatMode === 'standard' ? 'トランク奥行 (Trunk Depth)' : 'フルフラット時の奥行 (Full Flat Depth)'}
               </span>
               <span className="text-base font-black font-mono text-indigo-700">
-                {activeDepth} cm <span className="text-[10px] text-slate-400 font-normal">({currentVehicle.depth}基準)</span>
+                {activeDepth} cm {currentVehicle.rearSeatMode !== 'standard' && <span className="text-indigo-600 font-extrabold text-[10px] block sm:inline sm:ml-1">(トランク: {currentVehicle.depth}cm)</span>}
               </span>
             </div>
             <div>
@@ -2675,7 +2675,7 @@ export default function PackingVisualizer({
 
                       if (currentVehicle.rearSeatMode === 'split') {
                         const trunkDepth = currentVehicle.depth;
-                        const rearSeatDepth = Math.max(0, activeDepth - trunkDepth);
+                        const rearSeatDepth = Math.max(0, activeDepth - trunkDepth - 10);
                         
                         const rearW_cm = currentVehicle.rearFoldedWidth || activeWidth;
                         const rearH_cm = viewDirection2D === 'top' ? rearSeatDepth : activeHeight;
