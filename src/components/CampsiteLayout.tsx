@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { GearItem, LayoutItem, LayoutProfile, GearCategory, GearShape } from '../types';
+import { GearItem, LayoutItem, LayoutProfile, GearCategory, GearShape, Vehicle } from '../types';
 import { 
   Sparkles, 
   RefreshCw, 
@@ -14,7 +14,8 @@ import {
   Home, 
   Flame,
   Download,
-  Upload as UploadIcon
+  Upload as UploadIcon,
+  Car
 } from 'lucide-react';
 
 interface CampsiteLayoutProps {
@@ -38,6 +39,7 @@ interface CampsiteLayoutProps {
   onDeleteLayoutProfile: (profileId: string) => void;
   onImportLayoutItems: (items: LayoutItem[], width: number, height: number, preset: 'forest' | 'lake' | 'grass') => void;
   onEditGearInInventory: (id: string) => void;
+  currentVehicle: Vehicle;
 }
 
 export default function CampsiteLayout({
@@ -61,6 +63,7 @@ export default function CampsiteLayout({
   onDeleteLayoutProfile,
   onImportLayoutItems,
   onEditGearInInventory,
+  currentVehicle,
 }: CampsiteLayoutProps) {
   const [selectedLayoutId, setSelectedLayoutId] = useState<string | null>(null);
   const [layoutContextId, setLayoutContextId] = useState<string>('campsite'); // 'campsite' or layoutItemId
@@ -68,6 +71,179 @@ export default function CampsiteLayout({
   const [isSnapEnabled, setIsSnapEnabled] = useState(true);
   const [activeGuides, setActiveGuides] = useState<{ type: 'x' | 'y'; value: number; label: string }[]>([]);
   const [newProfileName, setNewProfileName] = useState('');
+
+  const [isVehicleEnabled, setIsVehicleEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem('basecamp_os_layout_vehicle_enabled');
+    return saved === 'true';
+  });
+  const [vehicleX, setVehicleX] = useState<number>(() => {
+    const saved = localStorage.getItem('basecamp_os_layout_vehicle_x');
+    return saved ? parseInt(saved, 10) : 250;
+  });
+  const [vehicleY, setVehicleY] = useState<number>(() => {
+    const saved = localStorage.getItem('basecamp_os_layout_vehicle_y');
+    return saved ? parseInt(saved, 10) : 250;
+  });
+  const [vehicleRotation, setVehicleRotation] = useState<number>(() => {
+    const saved = localStorage.getItem('basecamp_os_layout_vehicle_rotation');
+    return saved ? parseInt(saved, 10) : 0;
+  });
+
+  // Persist vehicle states
+  React.useEffect(() => {
+    localStorage.setItem('basecamp_os_layout_vehicle_enabled', String(isVehicleEnabled));
+  }, [isVehicleEnabled]);
+  React.useEffect(() => {
+    localStorage.setItem('basecamp_os_layout_vehicle_x', String(vehicleX));
+  }, [vehicleX]);
+  React.useEffect(() => {
+    localStorage.setItem('basecamp_os_layout_vehicle_y', String(vehicleY));
+  }, [vehicleY]);
+  React.useEffect(() => {
+    localStorage.setItem('basecamp_os_layout_vehicle_rotation', String(vehicleRotation));
+  }, [vehicleRotation]);
+
+  // Determine full vehicle silhouette physical sizes (width x depth) in cm
+  const getVehicleSilhouetteDimensions = (vehicle: Vehicle) => {
+    if (vehicle.id === 'aqua') {
+      return { w: 170, d: 405 };
+    } else if (vehicle.id === 'suv') {
+      return { w: 185, d: 455 };
+    } else if (vehicle.id === 'minivan') {
+      return { w: 180, d: 470 };
+    } else {
+      return {
+        w: Math.max(170, Math.round(vehicle.width * 1.5)),
+        d: Math.max(400, Math.round(vehicle.depth * 2.5))
+      };
+    }
+  };
+
+  const { w: vehicleWidth, d: vehicleDepth } = getVehicleSilhouetteDimensions(currentVehicle);
+  const vehicleWidthPercent = (vehicleWidth / siteWidth) * 100;
+  const vehicleHeightPercent = (vehicleDepth / siteHeight) * 100;
+  const vehicleLeftPercent = (vehicleX / siteWidth) * 100;
+  const vehicleTopPercent = (vehicleY / siteHeight) * 100;
+
+  // Pointer event action handlers for vehicle
+  const handleVehiclePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    setSelectedLayoutId('layout-vehicle');
+
+    const container = canvasRef.current;
+    if (!container) return;
+
+    e.currentTarget.setPointerCapture(e.pointerId);
+
+    const rect = container.getBoundingClientRect();
+    const clickXCm = ((e.clientX - rect.left) / rect.width) * siteWidth;
+    const clickYCm = ((e.clientY - rect.top) / rect.height) * siteHeight;
+
+    setDragState({
+      id: 'layout-vehicle',
+      offsetX: clickXCm - vehicleX,
+      offsetY: clickYCm - vehicleY
+    });
+  };
+
+  const handleVehiclePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragState || dragState.id !== 'layout-vehicle') return;
+    e.stopPropagation();
+
+    const container = canvasRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const pointerXCm = ((e.clientX - rect.left) / rect.width) * siteWidth;
+    const pointerYCm = ((e.clientY - rect.top) / rect.height) * siteHeight;
+
+    let newX = Math.round(pointerXCm - dragState.offsetX);
+    let newY = Math.round(pointerYCm - dragState.offsetY);
+
+    if (isSnapEnabled) {
+      const SNAP_THRESHOLD = 15;
+      let snappedX = newX;
+      let snappedY = newY;
+      const guides: { type: 'x' | 'y'; value: number; label: string }[] = [];
+
+      const hw = vehicleWidth / 2;
+      const hd = vehicleDepth / 2;
+
+      // Snap to campsite boundaries
+      if (Math.abs(newX - hw) < SNAP_THRESHOLD) {
+        snappedX = hw;
+        guides.push({ type: 'x', value: 0, label: '車両 左端' });
+      } else if (Math.abs((newX + hw) - siteWidth) < SNAP_THRESHOLD) {
+        snappedX = siteWidth - hw;
+        guides.push({ type: 'x', value: siteWidth, label: '車両 右端' });
+      } else if (Math.abs(newX - siteWidth / 2) < SNAP_THRESHOLD) {
+        snappedX = siteWidth / 2;
+        guides.push({ type: 'x', value: siteWidth / 2, label: '中央グリッド' });
+      }
+
+      if (Math.abs(newY - hd) < SNAP_THRESHOLD) {
+        snappedY = hd;
+        guides.push({ type: 'y', value: 0, label: '車両 上端' });
+      } else if (Math.abs((newY + hd) - siteHeight) < SNAP_THRESHOLD) {
+        snappedY = siteHeight - hd;
+        guides.push({ type: 'y', value: siteHeight, label: '車両 下端' });
+      } else if (Math.abs(newY - siteHeight / 2) < SNAP_THRESHOLD) {
+        snappedY = siteHeight / 2;
+        guides.push({ type: 'y', value: siteHeight / 2, label: '中央グリッド' });
+      }
+
+      newX = Math.max(hw, Math.min(siteWidth - hw, snappedX));
+      newY = Math.max(hd, Math.min(siteHeight - hd, snappedY));
+      setActiveGuides(guides);
+    } else {
+      const hw = vehicleWidth / 2;
+      const hd = vehicleDepth / 2;
+      newX = Math.max(hw, Math.min(siteWidth - hw, newX));
+      newY = Math.max(hd, Math.min(siteHeight - hd, newY));
+    }
+
+    setVehicleX(newX);
+    setVehicleY(newY);
+  };
+
+  const handleVehiclePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragState && dragState.id === 'layout-vehicle') {
+      e.stopPropagation();
+      e.currentTarget.releasePointerCapture(e.pointerId);
+      setDragState(null);
+      setActiveGuides([]);
+    }
+  };
+
+  const handleVehicleRotateStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    const element = document.getElementById('layout-item-vehicle');
+    if (!element) return;
+
+    const rect = element.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const dx = moveEvent.clientX - centerX;
+      const dy = moveEvent.clientY - centerY;
+
+      const angleRad = Math.atan2(dy, dx);
+      const angleDeg = (angleRad * 180) / Math.PI + 90;
+      const rotation = (Math.round(angleDeg) + 360) % 360;
+      setVehicleRotation(rotation);
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
   
   // Canvas container element reference for calculating boundary coordinates
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -768,7 +944,7 @@ export default function CampsiteLayout({
             })}
 
             {/* Layout items mapping */}
-            {currentLevelItems.length === 0 ? (
+            {currentLevelItems.length === 0 && !isVehicleEnabled ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-black/5 pointer-events-none">
                 <Map className="w-12 h-12 text-slate-400 mb-2" />
                 <p className="text-sm font-black text-slate-800 uppercase">設営レイアウトは未登録です</p>
@@ -1014,6 +1190,162 @@ export default function CampsiteLayout({
                 );
               })
             )}
+
+            {/* Vehicle Silhouette Placement on main campsite context */}
+            {layoutContextId === 'campsite' && isVehicleEnabled && (
+              <div
+                id="layout-item-vehicle"
+                onPointerDown={handleVehiclePointerDown}
+                onPointerMove={handleVehiclePointerMove}
+                onPointerUp={handleVehiclePointerUp}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedLayoutId('layout-vehicle');
+                }}
+                style={{
+                  left: `${vehicleLeftPercent}%`,
+                  top: `${vehicleTopPercent}%`,
+                  width: `${vehicleWidthPercent}%`,
+                  height: `${vehicleHeightPercent}%`,
+                  transform: `translate(-50%, -50%) rotate(${vehicleRotation}deg)`,
+                  touchAction: 'none',
+                  zIndex: selectedLayoutId === 'layout-vehicle' ? 50 : 20
+                }}
+                className={`absolute cursor-grab active:cursor-grabbing ${
+                  selectedLayoutId === 'layout-vehicle' ? 'ring-2 ring-black ring-offset-2' : ''
+                }`}
+              >
+                {/* Visual Elements for the Vehicle Silhouette */}
+                <div className="w-full h-full relative transition-all duration-150 rounded-[18%] bg-slate-800 border-2 border-black flex flex-col justify-between overflow-visible">
+                  
+                  {/* Side Mirrors */}
+                  <div className="absolute top-[18%] -left-2.5 w-2.5 h-4 bg-slate-900 rounded-l border-l border-t border-b border-black z-[10]" />
+                  <div className="absolute top-[18%] -right-2.5 w-2.5 h-4 bg-slate-900 rounded-r border-r border-t border-b border-black z-[10]" />
+
+                  {/* Tires */}
+                  <div className="absolute top-[10%] -left-1 w-2 h-7 bg-zinc-900 rounded-sm border border-black z-[-1]" />
+                  <div className="absolute top-[10%] -right-1 w-2 h-7 bg-zinc-900 rounded-sm border border-black z-[-1]" />
+                  <div className="absolute bottom-[12%] -left-1 w-2 h-7 bg-zinc-900 rounded-sm border border-black z-[-1]" />
+                  <div className="absolute bottom-[12%] -right-1 w-2 h-7 bg-zinc-900 rounded-sm border border-black z-[-1]" />
+
+                  {/* Headlights (yellow glow at top) */}
+                  <div className="absolute -top-0.5 left-2 w-3.5 h-1 bg-yellow-300 rounded-full shadow-[0_0_8px_#fde047] z-[5]" />
+                  <div className="absolute -top-0.5 right-2 w-3.5 h-1 bg-yellow-300 rounded-full shadow-[0_0_8px_#fde047] z-[5]" />
+
+                  {/* Taillights (red glow at bottom) */}
+                  <div className="absolute -bottom-0.5 left-2.5 w-3.5 h-1 bg-red-600 rounded-full shadow-[0_0_6px_#ef4444] z-[5]" />
+                  <div className="absolute -bottom-0.5 right-2.5 w-3.5 h-1 bg-red-600 rounded-full shadow-[0_0_6px_#ef4444] z-[5]" />
+
+                  {/* Windshields & Glass effect */}
+                  {/* Front windshield */}
+                  <div className="absolute top-[14%] inset-x-2 h-[8%] bg-cyan-950/80 rounded-t-sm border border-cyan-800/40 z-[5]" />
+                  {/* Rear windshield */}
+                  <div className="absolute bottom-[14%] inset-x-2.5 h-[6%] bg-cyan-950/80 rounded-b-sm border border-cyan-800/40 z-[5]" />
+                  {/* Side windows left */}
+                  <div className="absolute top-[22%] bottom-[20%] left-0.5 w-[3px] bg-cyan-950/60 rounded-sm z-[5]" />
+                  {/* Side windows right */}
+                  <div className="absolute top-[22%] bottom-[20%] right-0.5 w-[3px] bg-cyan-950/60 rounded-sm z-[5]" />
+
+                  {/* Roof & Interior Label */}
+                  <div className="absolute top-[22%] bottom-[20%] inset-x-1.5 bg-slate-700/90 rounded-md border border-slate-650 flex flex-col items-center justify-center p-1 overflow-hidden z-[4]">
+                    {/* Front direction text indicator */}
+                    <div className="absolute top-1 text-[7px] font-black text-slate-450 select-none pointer-events-none flex flex-col items-center leading-none">
+                      <span>▲ FRONT</span>
+                      <span className="text-[5px] opacity-75">前方向</span>
+                    </div>
+
+                    {/* Cargo box or roof racks details if SUV/Minivan */}
+                    {(currentVehicle.id === 'suv' || currentVehicle.id === 'minivan') && (
+                      <div className="absolute inset-y-4 inset-x-2.5 border-l border-r border-slate-500 opacity-40">
+                        <div className="h-full flex flex-col justify-between py-1">
+                          <div className="h-[1px] bg-slate-500 w-full" />
+                          <div className="h-[1px] bg-slate-500 w-full" />
+                          <div className="h-[1px] bg-slate-500 w-full" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Text specification */}
+                    <div className="text-center text-white leading-tight flex flex-col items-center justify-center mt-1">
+                      <span className="text-[9px] font-black tracking-tight text-white drop-shadow-md truncate max-w-full px-1">
+                        {currentVehicle.id === 'aqua' ? '🚗' : currentVehicle.id === 'suv' ? '🚙' : '🚐'} {currentVehicle.name.split(' (')[0]}
+                      </span>
+                      <span className="text-[7.5px] font-mono font-bold text-slate-300 bg-black/40 px-1 py-0.5 rounded mt-0.5 leading-none shrink-0">
+                        {vehicleWidth} × {vehicleDepth} cm
+                      </span>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Free rotation handle button (similar to gear items) */}
+                {selectedLayoutId === 'layout-vehicle' && (
+                  <>
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full w-[1.5px] h-4 bg-black pointer-events-none" />
+                    <div
+                      onPointerDown={handleVehicleRotateStart}
+                      className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-[22px] w-[22px] h-[22px] bg-white hover:bg-[#FF5C00] text-black hover:text-white rounded-full border border-black flex items-center justify-center cursor-alias shadow-[1px_1px_0px_rgba(0,0,0,1)] hover:shadow-none transition z-55 select-none text-[11px] font-bold"
+                      title="ドラッグでぐるぐる回転"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      🔄
+                    </div>
+                  </>
+                )}
+
+                {/* Floating direct control popover */}
+                {selectedLayoutId === 'layout-vehicle' && (
+                  <div
+                    style={{
+                      transform: `translateY(-50%) rotate(${-vehicleRotation}deg)`,
+                    }}
+                    className={`absolute top-1/2 ${
+                      vehicleLeftPercent > 70 
+                        ? 'right-full mr-2' 
+                        : 'left-full ml-2'
+                    } flex flex-col gap-1 bg-white border border-black p-1 shadow-[2px_2px_0px_rgba(0,0,0,1)] rounded-sm z-[100] pointer-events-auto select-none`}
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const nextRot = (vehicleRotation + 90) % 360;
+                        setVehicleRotation(nextRot);
+                      }}
+                      className="w-7 h-7 bg-white hover:bg-neutral-100 text-slate-800 border border-black rounded flex items-center justify-center text-xs font-bold transition-all cursor-pointer active:scale-95 shadow-[1px_1px_0px_#000] hover:shadow-none"
+                      title="90度回転"
+                    >
+                      🔄
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setVehicleRotation(0);
+                      }}
+                      className="w-7 h-7 bg-white hover:bg-neutral-100 text-slate-800 border border-black rounded flex items-center justify-center text-xs font-bold transition-all cursor-pointer active:scale-95 shadow-[1px_1px_0px_#000] hover:shadow-none"
+                      title="角度を0度にリセット"
+                    >
+                      ↩️
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsVehicleEnabled(false);
+                        setSelectedLayoutId(null);
+                      }}
+                      className="w-7 h-7 bg-white hover:bg-rose-50 text-rose-600 border border-black rounded flex items-center justify-center text-xs font-bold transition-all cursor-pointer active:scale-95 shadow-[1px_1px_0px_#000] hover:shadow-none"
+                      title="車両の配置をオフにする"
+                    >
+                      ❌
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Reference Scale Legend line */}
@@ -1049,6 +1381,118 @@ export default function CampsiteLayout({
             <p className="text-slate-500 text-[10px] leading-relaxed">
               ギアをダブルクリック/ダブルタップすると、サイズ情報や図面設定を直接開き詳細な設定変更が可能です。
             </p>
+          </div>
+        </div>
+
+        {/* 🚗 VEHICLE PLACEMENT CONTROL CARD */}
+        <div className="bg-white border-2 border-black p-5 rounded-none shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] text-slate-900">
+          <h4 className="text-sm font-black uppercase tracking-tight flex items-center gap-1.5 mb-2">
+            <span className="text-lg">🚗</span>
+            車両設置シミュレーション
+          </h4>
+          <p className="text-[10px] text-slate-500 mb-3.5 leading-relaxed">
+            キャンプサイト区画内に、現在選択されている車両のリアルスケール・シルエットを配置して干渉を確認できます。
+          </p>
+
+          <div className="space-y-3">
+            {/* Toggle switch with heavy styling */}
+            <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-black">
+              <span className="text-xs font-extrabold text-slate-800">
+                車両シルエット表示:
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextState = !isVehicleEnabled;
+                  setIsVehicleEnabled(nextState);
+                  if (nextState) {
+                    setSelectedLayoutId('layout-vehicle');
+                  } else if (selectedLayoutId === 'layout-vehicle') {
+                    setSelectedLayoutId(null);
+                  }
+                }}
+                className={`px-4 py-1.5 border-2 border-black text-xs font-black uppercase tracking-widest cursor-pointer transition-all active:scale-95 ${
+                  isVehicleEnabled 
+                    ? 'bg-emerald-600 text-white shadow-[2px_2px_0px_#000]' 
+                    : 'bg-white text-stone-500 shadow-none'
+                }`}
+              >
+                {isVehicleEnabled ? 'オン (ON)' : 'オフ (OFF)'}
+              </button>
+            </div>
+
+            {/* Current Active Vehicle Info and Alignment Controls */}
+            {isVehicleEnabled && (
+              <div className="border border-dashed border-black/30 p-3 bg-stone-50/50 space-y-2.5 rounded-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded bg-slate-800 text-white flex items-center justify-center font-bold text-sm shrink-0">
+                    {currentVehicle.id === 'aqua' ? '🚗' : currentVehicle.id === 'suv' ? '🚙' : '🚐'}
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-extrabold text-slate-900 leading-none">
+                      {currentVehicle.name}
+                    </p>
+                    <p className="text-[9px] font-mono text-slate-500 mt-1">
+                      サイズ: {vehicleWidth} × {vehicleDepth} cm (リアル縮尺)
+                    </p>
+                  </div>
+                </div>
+
+                {/* Alignment & Coordinate Adjustment panel */}
+                <div className="space-y-1.5 text-xs">
+                  <span className="text-[10px] font-black uppercase text-slate-600 block">
+                    🕹️ 位置と角度のコントロール
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Position coordinates readout */}
+                    <div className="bg-white border border-black p-1.5 rounded-sm text-center">
+                      <span className="text-[9px] text-slate-400 block leading-none mb-0.5">現在座標(X)</span>
+                      <span className="font-mono font-bold text-[11px]">{vehicleX} cm</span>
+                    </div>
+                    <div className="bg-white border border-black p-1.5 rounded-sm text-center">
+                      <span className="text-[9px] text-slate-400 block leading-none mb-0.5">現在座標(Y)</span>
+                      <span className="font-mono font-bold text-[11px]">{vehicleY} cm</span>
+                    </div>
+                  </div>
+
+                  {/* Move/reposition buttons */}
+                  <div className="grid grid-cols-3 gap-1 mt-1 text-center font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setVehicleRotation((prev) => (prev + 15) % 360)}
+                      className="bg-white hover:bg-stone-100 border border-black py-1 text-[10px] cursor-pointer"
+                      title="反時計回りに15度回転"
+                    >
+                      ↩️ +15°
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Reset to center
+                        setVehicleX(Math.round(siteWidth / 2));
+                        setVehicleY(Math.round(siteHeight / 2));
+                      }}
+                      className="bg-stone-900 hover:bg-[#FF5C00] text-white py-1 text-[10px] font-extrabold cursor-pointer"
+                    >
+                      中央に移動
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVehicleRotation((prev) => (prev - 15 + 360) % 360)}
+                      className="bg-white hover:bg-stone-100 border border-black py-1 text-[10px] cursor-pointer"
+                      title="時計回りに15度回転"
+                    >
+                      ↪️ -15°
+                    </button>
+                  </div>
+
+                  {/* Help note */}
+                  <p className="text-[9px] text-slate-400 leading-snug pt-1">
+                    ※キャンバス上の車体を直接ドラッグして移動させたり、上部の 🔄 ハンドルで自由に回転・位置決めすることも可能です。
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

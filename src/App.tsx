@@ -1250,6 +1250,7 @@ export default function App() {
             onDeleteLayoutProfile={handleDeleteLayoutProfile}
             onImportLayoutItems={handleImportLayoutItems}
             onEditGearInInventory={handleEditGearInInventory}
+            currentVehicle={currentVehicle}
           />
         )}
 
