@@ -494,7 +494,7 @@ export default function App() {
     ];
   });
 
-  const lastActiveVehicleIdRef = useRef<string>(currentVehicle.id || currentVehicle.type);
+  const lastActiveVehicleIdRef = useRef<string>(`${currentVehicle.id || currentVehicle.type}_${currentVehicle.rearSeatMode || 'standard'}`);
 
   // Sync states to localstorage
   useEffect(() => {
@@ -548,13 +548,15 @@ export default function App() {
   // Auto-backup configuration for the active vehicle on alterations
   useEffect(() => {
     const activeId = currentVehicle.id || currentVehicle.type;
-    if (lastActiveVehicleIdRef.current !== activeId) {
+    const activeMode = currentVehicle.rearSeatMode || 'standard';
+    const compoundKey = `${activeId}_${activeMode}`;
+    if (lastActiveVehicleIdRef.current !== compoundKey) {
       return;
     }
 
     const currentState: VehiclePackingState = {
       vehicleId: activeId,
-      rearSeatMode: currentVehicle.rearSeatMode || 'standard',
+      rearSeatMode: activeMode,
       baggages,
       storages,
       gearParentMap: gears.reduce((acc, g) => {
@@ -565,7 +567,7 @@ export default function App() {
     };
 
     // Guard against infinite state updates: verify if something has actually altered
-    const previousState = vehiclePackingStates[activeId];
+    const previousState = vehiclePackingStates[compoundKey];
     if (previousState) {
       const parentMapChanged = JSON.stringify(currentState.gearParentMap) !== JSON.stringify(previousState.gearParentMap);
       const coordsChanged = JSON.stringify(currentState.placedCoordinates) !== JSON.stringify(previousState.placedCoordinates);
@@ -580,19 +582,24 @@ export default function App() {
 
     setVehiclePackingStates(prev => ({
       ...prev,
-      [activeId]: currentState
+      [compoundKey]: currentState
     }));
   }, [baggages, storages, gears, currentVehicle.rearSeatMode, placedCoordinates, vehiclePackingStates]);
 
   // Switch selected vehicle with full state save & load sequence
   const handleSwitchVehicle = (newVehicle: Vehicle) => {
     const oldId = currentVehicle.id || currentVehicle.type;
+    const oldMode = currentVehicle.rearSeatMode || 'standard';
+    const oldKey = `${oldId}_${oldMode}`;
+
     const newId = newVehicle.id || newVehicle.type;
+    const newMode = newVehicle.rearSeatMode || 'standard';
+    const newKey = `${newId}_${newMode}`;
     
     // Save current state of the old vehicle
     const oldState: VehiclePackingState = {
       vehicleId: oldId,
-      rearSeatMode: currentVehicle.rearSeatMode || 'standard',
+      rearSeatMode: oldMode,
       baggages,
       storages,
       gearParentMap: gears.reduce((acc, g) => {
@@ -604,16 +611,16 @@ export default function App() {
 
     const nextPackingStates = {
       ...vehiclePackingStates,
-      [oldId]: oldState
+      [oldKey]: oldState
     };
     setVehiclePackingStates(nextPackingStates);
     localStorage.setItem('basecamp_os_vehicle_packing_states', JSON.stringify(nextPackingStates));
 
     // Update ref before switching to prevent the auto-backup effect from triggering and overwriting the wrong vehicle's state
-    lastActiveVehicleIdRef.current = newId;
+    lastActiveVehicleIdRef.current = newKey;
 
     // Load state of the target vehicle
-    const newState = nextPackingStates[newId];
+    const newState = nextPackingStates[newKey];
     if (newState) {
       setPlacedCoordinates(newState.placedCoordinates || {});
       setGears(prev => prev.map(g => {
@@ -631,7 +638,49 @@ export default function App() {
   };
 
   const handleUpdateVehicleSeatMode = (mode: 'standard' | 'split' | 'flat') => {
+    const oldId = currentVehicle.id || currentVehicle.type;
+    const oldMode = currentVehicle.rearSeatMode || 'standard';
+    const oldKey = `${oldId}_${oldMode}`;
+
     const updatedVehicle = { ...currentVehicle, rearSeatMode: mode };
+    const newKey = `${oldId}_${mode}`;
+    
+    // Save current state under old mode
+    const oldState: VehiclePackingState = {
+      vehicleId: oldId,
+      rearSeatMode: oldMode,
+      baggages,
+      storages,
+      gearParentMap: gears.reduce((acc, g) => {
+        acc[g.id] = g.parentId;
+        return acc;
+      }, {} as { [key: string]: string }),
+      placedCoordinates
+    };
+
+    const nextPackingStates = {
+      ...vehiclePackingStates,
+      [oldKey]: oldState
+    };
+    setVehiclePackingStates(nextPackingStates);
+    localStorage.setItem('basecamp_os_vehicle_packing_states', JSON.stringify(nextPackingStates));
+
+    // Update ref
+    lastActiveVehicleIdRef.current = newKey;
+
+    // Load state of the new mode
+    const newState = nextPackingStates[newKey];
+    if (newState) {
+      setPlacedCoordinates(newState.placedCoordinates || {});
+      setGears(prev => prev.map(g => {
+        const pId = newState.gearParentMap?.[g.id];
+        return { ...g, parentId: pId !== undefined ? pId : 'unassigned' };
+      }));
+    } else {
+      setPlacedCoordinates({});
+      setGears(prev => prev.map(g => ({ ...g, parentId: 'unassigned' })));
+    }
+
     setCurrentVehicle(updatedVehicle);
     setVehiclesList(prev => prev.map(v => (v.id === currentVehicle.id || v.type === currentVehicle.type) ? { ...v, rearSeatMode: mode } : v));
   };
@@ -1235,6 +1284,7 @@ export default function App() {
             vehicles={vehiclesList}
             currentVehicle={currentVehicle}
             setCurrentVehicle={handleSwitchVehicle}
+            onUpdateVehicleSeatMode={handleUpdateVehicleSeatMode}
             onAddCustomVehicle={handleAddCustomVehicle}
             onRemoveCustomVehicle={handleRemoveCustomVehicle}
             onRestoreDefaultVehicles={handleRestoreDefaultVehicles}

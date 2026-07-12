@@ -18,6 +18,7 @@ interface MyPageProps {
   vehicles: Vehicle[];
   currentVehicle: Vehicle;
   setCurrentVehicle: (vehicle: Vehicle) => void;
+  onUpdateVehicleSeatMode?: (mode: 'standard' | 'split' | 'flat') => void;
   onAddCustomVehicle: (newVehicle: Omit<Vehicle, 'id' | 'rearSeatMode'>) => void;
   onRemoveCustomVehicle: (id: string) => void;
   onRestoreDefaultVehicles?: () => void;
@@ -42,6 +43,7 @@ export default function MyPage({
   vehicles,
   currentVehicle,
   setCurrentVehicle,
+  onUpdateVehicleSeatMode,
   onAddCustomVehicle,
   onRemoveCustomVehicle,
   onRestoreDefaultVehicles,
@@ -451,21 +453,36 @@ export default function MyPage({
               <div className="flex gap-1 bg-white p-1 border rounded shrink-0">
                 <button
                   type="button"
-                  onClick={() => setRearSeatMode('standard')}
+                  onClick={() => {
+                    setRearSeatMode('standard');
+                    if (onUpdateVehicleSeatMode) {
+                      onUpdateVehicleSeatMode('standard');
+                    }
+                  }}
                   className={`px-2.5 py-1 text-[11px] font-bold rounded ${rearSeatMode === 'standard' ? 'bg-[#FF5C00] text-white' : 'hover:bg-slate-100 text-slate-700'}`}
                 >
                   荷室のみ (Trunk)
                 </button>
                 <button
                   type="button"
-                  onClick={() => setRearSeatMode('split')}
+                  onClick={() => {
+                    setRearSeatMode('split');
+                    if (onUpdateVehicleSeatMode) {
+                      onUpdateVehicleSeatMode('split');
+                    }
+                  }}
                   className={`px-2.5 py-1 text-[11px] font-bold rounded ${rearSeatMode === 'split' ? 'bg-[#FF5C00] text-white' : 'hover:bg-slate-100 text-slate-700'}`}
                 >
                   荷室＋後席別々 (Separate)
                 </button>
                 <button
                   type="button"
-                  onClick={() => setRearSeatMode('flat')}
+                  onClick={() => {
+                    setRearSeatMode('flat');
+                    if (onUpdateVehicleSeatMode) {
+                      onUpdateVehicleSeatMode('flat');
+                    }
+                  }}
                   className={`px-2.5 py-1 text-[11px] font-bold rounded ${rearSeatMode === 'flat' ? 'bg-[#FF5C00] text-white' : 'hover:bg-slate-100 text-slate-700'}`}
                 >
                   フルフラット (Flat)

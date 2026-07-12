@@ -164,9 +164,10 @@ export default function PackingVisualizer({
 
   // 3D visualizer mode & camera orbiting states
   const [visualizerMode, setVisualizerMode] = useState<'2d' | '3d'>('2d');
-  const [yaw, setYaw] = useState<number>(-35);
-  const [pitch, setPitch] = useState<number>(25);
+  const [yaw, setYaw] = useState<number>(135);
+  const [pitch, setPitch] = useState<number>(35);
   const [zoom, setZoom] = useState<number>(1.15);
+  const [viewHeightMode, setViewHeightMode] = useState<'above' | 'below'>('above');
 
   // Tetris style Dropping packing system states
   const [droppingItemId, setDroppingItemId] = useState<string | null>(null);
@@ -673,9 +674,9 @@ export default function PackingVisualizer({
     const radYaw = (yaw * Math.PI) / 180;
     const radPitch = ((90 - pitch) * Math.PI) / 180;
 
-    // Z-axial rotation (Yaw)
-    const rx1 = x3d * Math.cos(radYaw) - y3d * Math.sin(radYaw);
-    const ry1 = x3d * Math.sin(radYaw) + y3d * Math.cos(radYaw);
+    // Z-axial rotation (Yaw) with mirrored X-axis to fix the left-right mirroring mismatch
+    const rx1 = (-x3d) * Math.cos(radYaw) - y3d * Math.sin(radYaw);
+    const ry1 = (-x3d) * Math.sin(radYaw) + y3d * Math.cos(radYaw);
     const rz1 = z3d;
 
     // X-axial rotation (Pitch)
@@ -691,7 +692,10 @@ export default function PackingVisualizer({
     const screenX = w / 2 + rx2 * scale;
     const screenY = h / 2.0 - rz2 * scale;
 
-    return { x: screenX, y: screenY, depth: -ry2 };
+    // Dynamic depth sorting: when looking from above, ry2 is our depth; from below, -ry2
+    const depthVal = viewHeightMode === 'above' ? ry2 : -ry2;
+
+    return { x: screenX, y: screenY, depth: depthVal };
   };
 
   // 3D Canvas tap/click selection handler
@@ -710,8 +714,27 @@ export default function PackingVisualizer({
     let minDistance = 60; // Max select radius in pixels
 
     cargoItems.forEach(item => {
-      const leftX = (item.xPercent / 100.0) * activeWidth;
-      const topY = (item.yPercent / 100.0) * activeDepth;
+      let leftX = 0;
+      let topY = 0;
+
+      if (currentVehicle.rearSeatMode === 'split') {
+        const trunkDepth = currentVehicle.depth;
+        const rearSeatDepth = Math.max(0, activeDepth - trunkDepth - 10);
+        const rearW_cm = currentVehicle.rearFoldedWidth || activeWidth;
+        const rearSeatXOffset = (activeWidth - rearW_cm) / 2;
+
+        if (item.parentId === 'rear_seat') {
+          leftX = rearSeatXOffset + (item.xPercent / 100.0) * rearW_cm;
+          topY = (item.yPercent / 100.0) * rearSeatDepth;
+        } else {
+          leftX = (item.xPercent / 100.0) * activeWidth;
+          topY = (rearSeatDepth + 10) + (item.yPercent / 100.0) * trunkDepth;
+        }
+      } else {
+        leftX = (item.xPercent / 100.0) * activeWidth;
+        topY = (item.yPercent / 100.0) * activeDepth;
+      }
+
       const floorZ = (item.zPercent / 100.0) * Math.max(0, activeHeight - item.height);
 
       const cx = -hw + leftX + item.width / 2;
@@ -851,7 +874,7 @@ export default function PackingVisualizer({
     // B. Rear backseat barrier wall
     const backsFaceDepth = (floor0.y + floor1.y + roof0.y + roof1.y) / 4;
     renderQueue.push({
-      depth: project(0, -hd, 0).depth + 100, // backseat is always drawn towards seat side
+      depth: project(0, -hd, hh).depth + 100, // backseat is always drawn towards seat side evaluated at roof height hh
       draw: () => {
         // Linear colored back seat gradient representation
         const p0 = project(floor0.x, floor0.y, floor0.z);
@@ -891,7 +914,7 @@ export default function PackingVisualizer({
       const midY = -hd + rearSeatDepthForBackrest + 5; // Center of the 10cm backrest zone
       
       renderQueue.push({
-        depth: project(0, midY, 0).depth + 50, // depth-sorting coordinate
+        depth: project(0, midY, hh).depth + 50, // depth-sorting coordinate evaluated at roof height hh
         draw: () => {
           const p0 = project(-hw, midY, -hh);
           const p1 = project(hw, midY, -hh);
@@ -954,8 +977,27 @@ export default function PackingVisualizer({
       const pos = placedCoordinates[item.id] || { x: 15, y: 15, z: 0, rotated: false, rotationAxis: 'none' };
       const rotationMode = pos.rotationAxis || (pos.rotated ? 'horizontal' : 'none');
       
-      const leftX = (item.xPercent / 100.0) * activeWidth;
-      const topY = (item.yPercent / 100.0) * activeDepth;
+      let leftX = 0;
+      let topY = 0;
+
+      if (currentVehicle.rearSeatMode === 'split') {
+        const trunkDepth = currentVehicle.depth;
+        const rearSeatDepth = Math.max(0, activeDepth - trunkDepth - 10);
+        const rearW_cm = currentVehicle.rearFoldedWidth || activeWidth;
+        const rearSeatXOffset = (activeWidth - rearW_cm) / 2;
+
+        if (item.parentId === 'rear_seat') {
+          leftX = rearSeatXOffset + (item.xPercent / 100.0) * rearW_cm;
+          topY = (item.yPercent / 100.0) * rearSeatDepth;
+        } else {
+          leftX = (item.xPercent / 100.0) * activeWidth;
+          topY = (rearSeatDepth + 10) + (item.yPercent / 100.0) * trunkDepth;
+        }
+      } else {
+        leftX = (item.xPercent / 100.0) * activeWidth;
+        topY = (item.yPercent / 100.0) * activeDepth;
+      }
+
       const floorZ = (item.zPercent / 100.0) * Math.max(0, activeHeight - item.height);
 
       const cx = -hw + leftX + item.width / 2;
@@ -1236,7 +1278,7 @@ export default function PackingVisualizer({
     renderQueue.sort((a, b) => b.depth - a.depth);
     renderQueue.forEach(u => u.draw());
 
-  }, [yaw, pitch, zoom, activeWidth, activeDepth, activeHeight, placedCoordinates, selectedContainerId, cargoItems, droppingItemId, droppingX, droppingY, droppingRotation]);
+  }, [yaw, pitch, zoom, viewHeightMode, activeWidth, activeDepth, activeHeight, placedCoordinates, selectedContainerId, cargoItems, droppingItemId, droppingX, droppingY, droppingRotation]);
 
   // Render bento graphics from 2D coordinates
   const renderBaggageItem = (bag: Baggage, spaceDims: any, isCovered?: boolean) => {
@@ -2255,27 +2297,100 @@ export default function PackingVisualizer({
 
                     {/* Camera manual rotation help hint overlay */}
                     <div className="absolute top-2.5 left-2.5 bg-[#FF5C00] text-[#0B0F19] text-[10px] font-bold px-2 py-1 leading-none rounded-none font-sans select-none border border-[#FF5C00] flex items-center gap-1 group-hover:opacity-95 transition-opacity">
-                      <span>💡 タップで対象ギアを選択、ドラッグで回転</span>
+                      <span>💡 タップで対象ギアを選択、下のコントローラーでカメラ回転</span>
                     </div>
 
                     {/* Locked camera angle badge overlay */}
-                    <div className="absolute bottom-2.5 right-2.5 bg-black/85 text-[9px] font-bold text-zinc-350 p-1.5 rounded-none border border-white/10 select-none flex items-center gap-1">
-                      <span>🎥 視点: 右斜め後方 (固定軸)</span>
+                    <div className="absolute bottom-2.5 right-2.5 bg-black/85 text-[9px] font-bold text-zinc-350 p-1.5 rounded-none border border-white/10 select-none flex flex-col gap-0.5 items-end">
+                      <span>🎥 視点: {viewHeightMode === 'above' ? '見下ろし (上から)' : '見上げ (下から)'}</span>
+                      <span className="text-[7.5px] opacity-75">(Yaw: {yaw}°, Pitch: {pitch}°)</span>
                     </div>
 
-                    {/* Direct Zoom factors sliders screen overlay */}
-                    <div className="absolute bottom-2.5 left-2.5 flex items-center gap-1.5 bg-black/80 px-2 py-1 rounded border border-white/15 text-[8.5px] font-mono text-white">
-                      <span>🔍 ズーム:</span>
-                      <input
-                        type="range"
-                        min="0.5"
-                        max="2.0"
-                        step="0.05"
-                        value={zoom}
-                        onChange={(e) => setZoom(parseFloat(e.target.value))}
-                        className="w-16 accent-[#FF5C00]"
-                      />
-                      <span className="w-6 text-center">{Math.round(zoom * 100)}%</span>
+                    {/* Direct camera controls */}
+                    <div className="absolute bottom-2.5 left-2.5 flex flex-wrap items-center gap-3 bg-black/80 p-2 rounded border border-white/15 text-[8.5px] font-mono text-white max-w-[70%]">
+                      <div className="flex items-center gap-1">
+                        <span>🧱 視点方向:</span>
+                        <select
+                          value={viewHeightMode}
+                          onChange={(e) => setViewHeightMode(e.target.value as 'above' | 'below')}
+                          className="bg-zinc-900 text-[#FF5C00] rounded border border-zinc-700 text-[8px] font-sans font-extrabold py-0.5 px-1.5 cursor-pointer outline-none focus:ring-1 focus:ring-[#FF5C00]"
+                        >
+                          <option value="above">見下ろし (上から)</option>
+                          <option value="below">見上げ (下から)</option>
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <span>🔍 ズーム:</span>
+                        <input
+                          type="range"
+                          min="0.5"
+                          max="2.0"
+                          step="0.05"
+                          value={zoom}
+                          onChange={(e) => setZoom(parseFloat(e.target.value))}
+                          className="w-12 accent-[#FF5C00]"
+                        />
+                        <span className="w-6 text-center">{Math.round(zoom * 100)}%</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-1">
+                        <span>🔄 左右回転:</span>
+                        <input
+                          type="range"
+                          min="-180"
+                          max="180"
+                          step="5"
+                          value={yaw}
+                          onChange={(e) => setYaw(parseInt(e.target.value))}
+                          className="w-16 accent-[#FF5C00]"
+                        />
+                        <span className="w-6 text-center">{yaw}°</span>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <span>📐 上下角度:</span>
+                        <input
+                          type="range"
+                          min="5"
+                          max="85"
+                          step="5"
+                          value={pitch}
+                          onChange={(e) => setPitch(parseInt(e.target.value))}
+                          className="w-16 accent-[#FF5C00]"
+                        />
+                        <span className="w-6 text-center">{pitch}°</span>
+                      </div>
+                      
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setYaw(135);
+                          setPitch(35);
+                          setZoom(1.15);
+                        }}
+                        className={`px-1.5 py-0.5 rounded text-[8px] font-sans font-extrabold cursor-pointer transition-colors ${
+                          yaw === 135 ? 'bg-white text-black' : 'bg-[#FF5C00] text-black hover:bg-white'
+                        }`}
+                        title="右上（フロント右側からリアを見下ろす視点）に設定"
+                      >
+                        右上 (Yaw: 135°)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setYaw(45);
+                          setPitch(35);
+                          setZoom(1.15);
+                        }}
+                        className={`px-1.5 py-0.5 rounded text-[8px] font-sans font-extrabold cursor-pointer transition-colors ${
+                          yaw === 45 ? 'bg-white text-black' : 'bg-[#FF5C00] text-black hover:bg-white'
+                        }`}
+                        title="右下（リア右側からフロントを見下ろす視点）に設定"
+                      >
+                        右下 (Yaw: 45°)
+                      </button>
                     </div>
                   </div>
                 </div>
